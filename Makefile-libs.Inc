@@ -4,8 +4,10 @@ BIN_DIR ?= $(PROJ_DIR)build/
 
 export CGO_LDFLAGS := -L$(BIN_DIR)
 export CGO_CFLAGS := -I$(PROJ_DIR)build/
-export GOOS
-export GOARCH
+export GOOS := windows
+export GOARCH := amd64
+export CGO_ENABLED := 1
+export CC := x86_64-w64-mingw32-gcc
 export GOARM
 export BIN_DIR
 
