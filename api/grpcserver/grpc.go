@@ -81,9 +81,6 @@ var ServerOptions = []grpc.ServerOption{
 	// TODO: these parameters work for now but we might need to revisit or add them as configuration
 	// TODO: Configure maxconns, maxconcurrentcons ..
 	grpc.KeepaliveParams(keepalive.ServerParameters{
-		MaxConnectionIdle:     time.Minute * 120,
-		MaxConnectionAge:      time.Minute * 180,
-		MaxConnectionAgeGrace: time.Minute * 10,
 		Time:                  time.Minute,
 		Timeout:               time.Minute * 3,
 	}),
