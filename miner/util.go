@@ -9,15 +9,18 @@ import (
 	"github.com/spacemeshos/go-spacemesh/sql"
 	"github.com/spacemeshos/go-spacemesh/sql/ballots"
 	"github.com/spacemeshos/go-spacemesh/sql/blocks"
-	"github.com/spacemeshos/go-spacemesh/sql/certificates"
+	"github.com/spacemeshos/go-spacemesh/sql/layers"
 )
 
 func ActiveSetFromEpochFirstBlock(db sql.Executor, epoch types.EpochID) ([]types.ATXID, error) {
-	bid, err := certificates.FirstInEpoch(db, epoch)
+	bid, err := layers.FirstAppliedInEpoch(db, epoch)
 	if err != nil {
 		return nil, err
 	}
+	return activeSetFromBlock(db, bid)
+}
 
+func activeSetFromBlock(db sql.Executor, bid types.BlockID) ([]types.ATXID, error) {
 	block, err := blocks.Get(db, bid)
 	if err != nil {
 		return nil, fmt.Errorf("actives get block: %w", err)

@@ -72,7 +72,8 @@ func fastnet() config.Config {
 	conf.SMESHING.Start = false
 	conf.SMESHING.Opts.ProviderID.SetInt64(int64(initialization.CPUProviderID()))
 	conf.SMESHING.Opts.NumUnits = 2
-	conf.SMESHING.Opts.Throttle = true
+	conf.SMESHING.Opts.ComputeBatchSize = 128
+	conf.SMESHING.Opts.Scrypt.N = 2 // faster scrypt
 	// Override proof of work flags to use light mode (less memory intensive)
 	conf.SMESHING.ProvingOpts.Flags = postCfg.RecommendedPowFlags()
 
@@ -90,6 +91,9 @@ func fastnet() config.Config {
 	conf.POET.GracePeriod = 10 * time.Second
 	conf.POET.CycleGap = 30 * time.Second
 	conf.POET.PhaseShift = 30 * time.Second
+	conf.POET.RequestTimeout = 12 * time.Second // RequestRetryDelay * 2 * MaxRequestRetries*(MaxRequestRetries+1)/2
+	conf.POET.RequestRetryDelay = 1 * time.Second
+	conf.POET.MaxRequestRetries = 3
 
 	return conf
 }

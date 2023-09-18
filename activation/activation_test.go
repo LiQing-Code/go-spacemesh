@@ -261,7 +261,7 @@ func TestBuilder_StartSmeshingCoinbase(t *testing.T) {
 	tab.mpost.EXPECT().LastOpts().Return(&PostSetupOpts{}).AnyTimes()
 	tab.mpost.EXPECT().CommitmentAtx().Return(tab.goldenATXID, nil).AnyTimes()
 	tab.mpost.EXPECT().GenerateProof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Post{}, &types.PostMetadata{}, nil)
-	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	tab.mclock.EXPECT().AwaitLayer(gomock.Any()).Return(make(chan struct{})).AnyTimes()
 	require.NoError(t, tab.StartSmeshing(coinbase, postSetupOpts))
 	require.Equal(t, coinbase, tab.Coinbase())
@@ -285,7 +285,7 @@ func TestBuilder_RestartSmeshing(t *testing.T) {
 			Challenge: shared.ZeroChallenge,
 		}, nil)
 		tab.mpost.EXPECT().Reset().AnyTimes()
-		tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+		tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 		tab.mpost.EXPECT().Config().AnyTimes()
 		ch := make(chan struct{})
 		close(ch)
@@ -441,7 +441,7 @@ func TestBuilder_StopSmeshing_OnPoSTError(t *testing.T) {
 	tab.mpost.EXPECT().CommitmentAtx().Return(types.EmptyATXID, nil).AnyTimes()
 	tab.mpost.EXPECT().LastOpts().Return(&PostSetupOpts{}).AnyTimes()
 	tab.mpost.EXPECT().GenerateProof(gomock.Any(), gomock.Any(), gomock.Any()).Return(&types.Post{}, &types.PostMetadata{}, nil).AnyTimes()
-	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	ch := make(chan struct{})
 	close(ch)
 	now := time.Now()
@@ -1146,7 +1146,7 @@ func TestBuilder_InitialProofGeneratedOnce(t *testing.T) {
 	tab.mpost.EXPECT().GenerateProof(gomock.Any(), shared.ZeroChallenge, gomock.Any()).Return(&types.Post{}, &types.PostMetadata{}, nil)
 	tab.mpost.EXPECT().LastOpts().Return(&PostSetupOpts{})
 	tab.mpost.EXPECT().CommitmentAtx().Return(tab.goldenATXID, nil)
-	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	require.NoError(t, tab.generateInitialPost(context.Background()))
 
 	posEpoch := postGenesisEpoch + 1
@@ -1173,12 +1173,12 @@ func TestBuilder_InitialProofGeneratedOnce(t *testing.T) {
 func TestBuilder_InitialPostIsPersisted(t *testing.T) {
 	tab := newTestBuilder(t, WithPoetConfig(PoetConfig{PhaseShift: layerDuration * 4}))
 	tab.mpost.EXPECT().Config().AnyTimes().Return(PostConfig{})
-	tab.mpost.EXPECT().LastOpts().Return(&PostSetupOpts{}).Times(3)
+	tab.mpost.EXPECT().LastOpts().Return(&PostSetupOpts{}).AnyTimes()
 	tab.mpost.EXPECT().CommitmentAtx().Return(tab.goldenATXID, nil).Times(3)
 	tab.mpost.EXPECT().GenerateProof(gomock.Any(), shared.ZeroChallenge, gomock.Any()).Return(&types.Post{}, &types.PostMetadata{
 		Challenge: shared.ZeroChallenge,
 	}, nil)
-	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	tab.mValidator.EXPECT().Post(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	require.NoError(t, tab.generateInitialPost(context.Background()))
 
 	// GenerateProof() should not be called again
@@ -1278,9 +1278,9 @@ func TestWaitingToBuildNipostChallengeWithJitter(t *testing.T) {
 		// ───▲─────|──────|─────────|----> time
 		//    │     └jitter|         └round start
 		//   now
-		wait := timeToWaitToBuildNipostChallenge(2*time.Hour, time.Hour)
-		require.Greater(t, wait, time.Hour)
-		require.LessOrEqual(t, wait, time.Hour+time.Second*36)
+		deadline := buildNipostChallengeStartDeadline(time.Now().Add(2*time.Hour), time.Hour)
+		require.Greater(t, deadline, time.Now().Add(time.Hour))
+		require.LessOrEqual(t, deadline, time.Now().Add(time.Hour+time.Second*36))
 	})
 	t.Run("after grace period, within max jitter value", func(t *testing.T) {
 		//          ┌──grace period──┐
@@ -1288,10 +1288,10 @@ func TestWaitingToBuildNipostChallengeWithJitter(t *testing.T) {
 		// ─────────|──▲────|────────|----> time
 		//          └ji│tter|        └round start
 		//            now
-		wait := timeToWaitToBuildNipostChallenge(time.Hour-time.Second*10, time.Hour)
-		require.GreaterOrEqual(t, wait, -time.Second*10)
+		deadline := buildNipostChallengeStartDeadline(time.Now().Add(time.Hour-time.Second*10), time.Hour)
+		require.GreaterOrEqual(t, deadline, time.Now().Add(-time.Second*10))
 		// jitter is 1% = 36s for 1h grace period
-		require.LessOrEqual(t, wait, time.Second*(36-10))
+		require.LessOrEqual(t, deadline, time.Now().Add(time.Second*(36-10)))
 	})
 	t.Run("after jitter max value", func(t *testing.T) {
 		//          ┌──grace period──┐
@@ -1299,7 +1299,7 @@ func TestWaitingToBuildNipostChallengeWithJitter(t *testing.T) {
 		// ─────────|──────|──▲──────|----> time
 		//          └jitter|  │       └round start
 		//                   now
-		wait := timeToWaitToBuildNipostChallenge(time.Hour-time.Second*37, time.Hour)
-		require.Less(t, wait, time.Duration(0))
+		deadline := buildNipostChallengeStartDeadline(time.Now().Add(time.Hour-time.Second*37), time.Hour)
+		require.Less(t, deadline, time.Now())
 	})
 }

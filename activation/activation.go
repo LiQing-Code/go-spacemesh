@@ -35,6 +35,7 @@ type PoetConfig struct {
 	PhaseShift        time.Duration `mapstructure:"phase-shift"`
 	CycleGap          time.Duration `mapstructure:"cycle-gap"`
 	GracePeriod       time.Duration `mapstructure:"grace-period"`
+	RequestTimeout    time.Duration `mapstructure:"poet-request-timeout"`
 	RequestRetryDelay time.Duration `mapstructure:"retry-delay"`
 	MaxRequestRetries int           `mapstructure:"retry-max"`
 }
@@ -50,7 +51,7 @@ const (
 	defaultPoetRetryInterval = 5 * time.Second
 
 	// Jitter added to the wait time before building a nipost challenge.
-	// It's expressed as % of poet grace period which translates to:
+	// It is expressed as % of poet grace period which translates to:
 	//  mainnet (grace period 1h) -> 36s
 	//  systest (grace period 10s) -> 0.1s
 	maxNipostChallengeBuildJitter = 1.0
@@ -342,7 +343,14 @@ func (b *Builder) verifyInitialPost(ctx context.Context, post *types.Post, metad
 	if err != nil {
 		b.log.With().Panic("failed to fetch commitment ATX ID.", log.Err(err))
 	}
-	err = b.validator.Post(ctx, b.nodeID, commitmentAtxId, post, metadata, b.postSetupProvider.LastOpts().NumUnits)
+	err = b.validator.Post(
+		ctx,
+		b.nodeID,
+		commitmentAtxId,
+		post,
+		metadata,
+		b.postSetupProvider.LastOpts().NumUnits,
+	)
 	switch {
 	case errors.Is(err, context.Canceled):
 		// If the context was canceled, we don't want to emit or log errors just propagate the cancellation signal.
@@ -436,24 +444,21 @@ func (b *Builder) buildNIPostChallenge(ctx context.Context) (*types.NIPostChalle
 	until := time.Until(b.poetRoundStart(current))
 	if until <= 0 {
 		metrics.PublishLateWindowLatency.Observe(-until.Seconds())
-		return nil, fmt.Errorf("%w: builder doesn't have time to submit in epoch %d. poet round already started %v ago",
-			ErrATXChallengeExpired, current, -until)
+		return nil, fmt.Errorf("%w: builder cannot to submit in epoch %d. poet round already started %v ago", ErrATXChallengeExpired, current, -until)
 	}
 	metrics.PublishOntimeWindowLatency.Observe(until.Seconds())
-	wait := timeToWaitToBuildNipostChallenge(until, b.poetCfg.GracePeriod)
-	if wait >= 0 {
+	wait := buildNipostChallengeStartDeadline(b.poetRoundStart(current), b.poetCfg.GracePeriod)
+	if time.Until(wait) > 0 {
 		b.log.WithContext(ctx).With().Debug("waiting for fresh atxs",
 			log.Duration("till poet round", until),
 			log.Uint32("current epoch", current.Uint32()),
-			log.Duration("wait", wait),
+			log.Duration("wait", time.Until(wait)),
 		)
-		if wait > 0 {
-			events.EmitPoetWaitRound(current, current+1, wait)
-		}
+		events.EmitPoetWaitRound(current, current+1, time.Until(wait))
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(wait):
+		case <-time.After(time.Until(wait)):
 		}
 	}
 
@@ -726,7 +731,7 @@ func SignAndFinalizeAtx(signer *signing.EdSigner, atx *types.ActivationTx) error
 	return atx.Initialize()
 }
 
-func timeToWaitToBuildNipostChallenge(untilRoundStart, gracePeriod time.Duration) time.Duration {
+func buildNipostChallengeStartDeadline(roundStart time.Time, gracePeriod time.Duration) time.Time {
 	jitter := randomDurationInRange(time.Duration(0), gracePeriod*maxNipostChallengeBuildJitter/100.0)
-	return untilRoundStart + jitter - gracePeriod
+	return roundStart.Add(jitter).Add(-gracePeriod)
 }

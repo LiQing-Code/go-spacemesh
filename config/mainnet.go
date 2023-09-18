@@ -47,7 +47,6 @@ func MainnetConfig() Config {
 
 			LayerDuration:  5 * time.Minute,
 			LayerAvgSize:   50,
-			LegacyLayer:    8180,
 			LayersPerEpoch: 4032,
 
 			TxsPerProposal: 700,       // https://github.com/spacemeshos/go-spacemesh/issues/4559
@@ -108,6 +107,7 @@ func MainnetConfig() Config {
 			PhaseShift:        240 * time.Hour,
 			CycleGap:          12 * time.Hour,
 			GracePeriod:       1 * time.Hour,
+			RequestTimeout:    1100 * time.Second, // RequestRetryDelay * 2 * MaxRequestRetries*(MaxRequestRetries+1)/2
 			RequestRetryDelay: 10 * time.Second,
 			MaxRequestRetries: 10,
 		},
@@ -131,12 +131,11 @@ func MainnetConfig() Config {
 		TIME:     timeConfig.DefaultConfig(),
 		SMESHING: smeshing,
 		FETCH:    fetch.DefaultConfig(),
-		LOGGING:  defaultLoggingConfig(),
+		LOGGING:  DefaultLoggingConfig(),
 		Sync: syncer.Config{
 			Interval:         time.Minute,
 			EpochEndFraction: 0.8,
 			MaxStaleDuration: time.Hour,
-			UseNewProtocol:   true,
 			Standalone:       false,
 			GossipDuration:   50 * time.Second,
 		},
