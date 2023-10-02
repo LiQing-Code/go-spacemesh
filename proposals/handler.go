@@ -248,7 +248,6 @@ func (h *Handler) HandleProposal(ctx context.Context, peer p2p.Peer, data []byte
 
 // HandleProposal is the gossip receiver for Proposal.
 func (h *Handler) handleProposal(ctx context.Context, expHash types.Hash32, peer p2p.Peer, data []byte) error {
-	receivedTime := time.Now()
 	logger := h.logger.WithContext(ctx)
 
 	t0 := time.Now()
@@ -259,16 +258,14 @@ func (h *Handler) handleProposal(ctx context.Context, expHash types.Hash32, peer
 	}
 	if p.Layer <= types.GetEffectiveGenesis() {
 		preGenesis.Inc()
-		return fmt.Errorf("proposal before effective genesis: layer %v", p.Layer)
-	}
-	if p.Layer <= h.mesh.ProcessedLayer() {
-		// old proposals have no use for the node
+		return fmt.Errorf("proposal before effective genesis: %d/%s", p.Layer, p.ID().String())
+	} else if p.Layer <= h.mesh.ProcessedLayer() {
 		tooLate.Inc()
-		return fmt.Errorf("proposal too late: layer %v", p.Layer)
+		return fmt.Errorf("proposal too late: %d/%s", p.Layer, p.ID().String())
+	} else if p.Layer >= h.clock.CurrentLayer()+1 {
+		tooFuture.Inc()
+		return fmt.Errorf("proposal from future: %d/%s", p.Layer, p.ID().String())
 	}
-
-	latency := receivedTime.Sub(h.clock.LayerToTime(p.Layer))
-	metrics.ReportMessageLatency(pubsub.ProposalProtocol, pubsub.ProposalProtocol, latency)
 
 	if !h.edVerifier.Verify(signing.PROPOSAL, p.SmesherID, p.SignedBytes(), p.Signature) {
 		badSigProposal.Inc()
@@ -366,6 +363,7 @@ func (h *Handler) handleProposal(ctx context.Context, expHash types.Hash32, peer
 		}
 		return errMaliciousBallot
 	}
+	metrics.ReportMessageLatency(pubsub.ProposalProtocol, pubsub.ProposalProtocol, time.Since(h.clock.LayerToTime(p.Layer)))
 	return nil
 }
 

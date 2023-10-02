@@ -623,6 +623,7 @@ func (app *App) initServices(ctx context.Context) error {
 	}
 	start := time.Now()
 	trtl, err := tortoise.Recover(
+		ctx,
 		app.cachedDB,
 		app.clock.CurrentLayer(), beaconProtocol, trtlopts...,
 	)
@@ -653,6 +654,7 @@ func (app *App) initServices(ctx context.Context) error {
 
 	fetcherWrapped := &layerFetcher{}
 	atxHandler := activation.NewHandler(
+		app.host.ID(),
 		app.cachedDB,
 		app.edVerifier,
 		app.clock,
@@ -857,9 +859,10 @@ func (app *App) initServices(ctx context.Context) error {
 	}
 
 	builderConfig := activation.Config{
-		CoinbaseAccount: coinbaseAddr,
-		GoldenATXID:     goldenATXID,
-		LayersPerEpoch:  layersPerEpoch,
+		CoinbaseAccount:  coinbaseAddr,
+		GoldenATXID:      goldenATXID,
+		LayersPerEpoch:   layersPerEpoch,
+		RegossipInterval: app.Config.RegossipAtxInterval,
 	}
 	atxBuilder := activation.NewBuilder(
 		builderConfig,
@@ -913,10 +916,12 @@ func (app *App) initServices(ctx context.Context) error {
 		return errors.New("not synced for gossip")
 	}
 
-	app.host.Register(pubsub.BeaconWeakCoinProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleWeakCoinProposal), pubsub.WithValidatorInline(true))
-	app.host.Register(pubsub.BeaconProposalProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleProposal), pubsub.WithValidatorInline(true))
-	app.host.Register(pubsub.BeaconFirstVotesProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleFirstVotes), pubsub.WithValidatorInline(true))
-	app.host.Register(pubsub.BeaconFollowingVotesProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleFollowingVotes), pubsub.WithValidatorInline(true))
+	if app.Config.Beacon.RoundsNumber > 0 {
+		app.host.Register(pubsub.BeaconWeakCoinProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleWeakCoinProposal), pubsub.WithValidatorInline(true))
+		app.host.Register(pubsub.BeaconProposalProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleProposal), pubsub.WithValidatorInline(true))
+		app.host.Register(pubsub.BeaconFirstVotesProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleFirstVotes), pubsub.WithValidatorInline(true))
+		app.host.Register(pubsub.BeaconFollowingVotesProtocol, pubsub.ChainGossipHandler(syncHandler, beaconProtocol.HandleFollowingVotes), pubsub.WithValidatorInline(true))
+	}
 	app.host.Register(pubsub.ProposalProtocol, pubsub.ChainGossipHandler(syncHandler, proposalListener.HandleProposal))
 	app.host.Register(pubsub.AtxProtocol, pubsub.ChainGossipHandler(atxSyncHandler, atxHandler.HandleGossipAtx))
 	app.host.Register(pubsub.TxProtocol, pubsub.ChainGossipHandler(syncHandler, app.txHandler.HandleGossipTransaction))
@@ -980,23 +985,19 @@ func (app *App) launchStandalone(ctx context.Context) error {
 	cfg.Round.EpochDuration = app.Config.LayerDuration * time.Duration(app.Config.LayersPerEpoch)
 	cfg.Round.CycleGap = app.Config.POET.CycleGap
 	cfg.Round.PhaseShift = app.Config.POET.PhaseShift
-
-	cfg, err = server.SetupConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("setup poet config: %w", err)
-	}
+	server.SetupConfig(cfg)
 
 	srv, err := server.New(ctx, *cfg)
 	if err != nil {
 		return fmt.Errorf("init poet server: %w", err)
 	}
-	app.log.With().Warning("lauching poet in standalone mode", log.Any("config", cfg))
+	app.log.With().Warning("launching poet in standalone mode", log.Any("config", cfg))
 	app.eg.Go(func() error {
 		if err := srv.Start(ctx); err != nil {
 			app.log.With().Error("poet server failed", log.Err(err))
 			return err
 		}
-		return nil
+		return srv.Close()
 	})
 	return nil
 }
@@ -1344,8 +1345,8 @@ func (app *App) setupDBs(ctx context.Context, lg log.Log) error {
 		return fmt.Errorf("open sqlite db %w", err)
 	}
 	app.db = sqlDB
-	if app.Config.CollectMetrics {
-		app.dbMetrics = dbmetrics.NewDBMetricsCollector(ctx, sqlDB, app.addLogger(StateDbLogger, lg), 5*time.Minute)
+	if app.Config.CollectMetrics && app.Config.DatabaseSizeMeteringInterval != 0 {
+		app.dbMetrics = dbmetrics.NewDBMetricsCollector(ctx, sqlDB, app.addLogger(StateDbLogger, lg), app.Config.DatabaseSizeMeteringInterval)
 	}
 	app.cachedDB = datastore.NewCachedDB(sqlDB, app.addLogger(CachedDBLogger, lg), datastore.WithConfig(app.Config.Cache))
 	return nil

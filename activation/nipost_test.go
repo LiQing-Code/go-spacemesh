@@ -180,7 +180,8 @@ func spawnPoet(tb testing.TB, opts ...HTTPPoetOpt) *HTTPPoetTestHarness {
 		eg.Wait()
 	})
 	eg.Go(func() error {
-		return poetProver.Service.Start(ctx)
+		err := poetProver.Service.Start(ctx)
+		return errors.Join(err, poetProver.Service.Close())
 	})
 
 	return poetProver
@@ -193,11 +194,11 @@ func buildNIPost(tb testing.TB, postProvider *testPostManager, nipostChallenge t
 
 	epoch := layersPerEpoch * layerDuration
 	poetCfg := PoetConfig{
-		PhaseShift:        epoch / 5,
-		CycleGap:          epoch / 10,
-		GracePeriod:       epoch / 10,
-		RequestTimeout:    epoch / 10,
-		RequestRetryDelay: epoch / 100,
+		PhaseShift:        epoch / 2,
+		CycleGap:          epoch / 5,
+		GracePeriod:       epoch / 5,
+		RequestTimeout:    epoch / 5,
+		RequestRetryDelay: epoch / 50,
 		MaxRequestRetries: 10,
 	}
 
@@ -248,8 +249,10 @@ func TestNewNIPostBuilderNotInitialized(t *testing.T) {
 		MaxRequestRetries: 10,
 	}
 
-	genesis := time.Now()
-	poetProver := spawnPoet(t, WithGenesis(genesis), WithEpochDuration(epoch), WithPhaseShift(poetCfg.PhaseShift), WithCycleGap(poetCfg.CycleGap))
+	poetProvider := defaultPoetServiceMock(t, []byte("poet"), "http://localhost:9999")
+	poetProvider.EXPECT().Proof(gomock.Any(), "").Return(&types.PoetProofMessage{
+		PoetProof: types.PoetProof{},
+	}, []types.Member{types.Member(challenge.Hash())}, nil)
 
 	ctrl := gomock.NewController(t)
 	poetDb := NewMockpoetDbAPI(ctrl)
@@ -266,13 +269,14 @@ func TestNewNIPostBuilderNotInitialized(t *testing.T) {
 		postProvider.id,
 		postProvider,
 		poetDb,
-		[]string{poetProver.RestURL().String()},
+		[]string{},
 		t.TempDir(),
 		logtest.New(t),
 		postProvider.signer,
 		poetCfg,
 		mclock,
 		WithNipostValidator(nipostValidator),
+		withPoetClients([]PoetProvingServiceClient{poetProvider}),
 	)
 	require.NoError(t, err)
 
@@ -1048,13 +1052,6 @@ func TestNIPostBuilder_Mainnet_PoetRound3_Workaround(t *testing.T) {
 		to    string
 		epoch types.EpochID
 	}{
-		{
-			// TODO(mafa): remove after epoch 4 end; https://github.com/spacemeshos/go-spacemesh/issues/4968
-			name:  "epoch 4: PoET 111 restore with PoET 110",
-			from:  "https://poet-110.spacemesh.network",
-			to:    "https://poet-111.spacemesh.network",
-			epoch: 4,
-		},
 		{
 			// TODO(mafa): remove after epoch 5 end; https://github.com/spacemeshos/go-spacemesh/issues/5030
 			name:  "epoch 5: PoET 112 restore with PoET 110",
