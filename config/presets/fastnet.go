@@ -5,9 +5,9 @@ import (
 	"math/big"
 	"time"
 
-	postCfg "github.com/spacemeshos/post/config"
 	"github.com/spacemeshos/post/initialization"
 
+	"github.com/spacemeshos/go-spacemesh/activation"
 	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/config"
 )
@@ -18,9 +18,8 @@ func init() {
 
 func fastnet() config.Config {
 	conf := config.DefaultConfig()
-
 	conf.NetworkHRP = "stest"
-	types.SetNetworkHRP(conf.NetworkHRP) // set to generate coinbase
+
 	conf.BaseConfig.OptFilterThreshold = 90
 	conf.BaseConfig.DatabasePruneInterval = time.Minute
 
@@ -70,6 +69,7 @@ func fastnet() config.Config {
 	conf.POST.MaxNumUnits = 4
 	conf.POST.MinNumUnits = 2
 
+	types.SetNetworkHRP(conf.NetworkHRP) // ensure that the correct HRP is set when generating the address below
 	conf.SMESHING.CoinbaseAccount = types.GenerateAddress([]byte("1")).String()
 	conf.SMESHING.Start = false
 	conf.SMESHING.Opts.ProviderID.SetInt64(int64(initialization.CPUProviderID()))
@@ -77,7 +77,7 @@ func fastnet() config.Config {
 	conf.SMESHING.Opts.ComputeBatchSize = 128
 	conf.SMESHING.Opts.Scrypt.N = 2 // faster scrypt
 	// Override proof of work flags to use light mode (less memory intensive)
-	conf.SMESHING.ProvingOpts.Flags = postCfg.RecommendedPowFlags()
+	conf.SMESHING.ProvingOpts.RandomXMode = activation.PostRandomXModeLight
 
 	conf.Beacon.Kappa = 40
 	conf.Beacon.Theta = big.NewRat(1, 4)
@@ -96,6 +96,5 @@ func fastnet() config.Config {
 	conf.POET.RequestTimeout = 12 * time.Second // RequestRetryDelay * 2 * MaxRequestRetries*(MaxRequestRetries+1)/2
 	conf.POET.RequestRetryDelay = 1 * time.Second
 	conf.POET.MaxRequestRetries = 3
-
 	return conf
 }

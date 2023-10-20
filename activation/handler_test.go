@@ -91,10 +91,6 @@ type testHandler struct {
 func newTestHandler(tb testing.TB, goldenATXID types.ATXID) *testHandler {
 	lg := logtest.New(tb)
 	cdb := datastore.NewCachedDB(sql.InMemory(), lg)
-
-	verifier, err := signing.NewEdVerifier()
-	require.NoError(tb, err)
-
 	ctrl := gomock.NewController(tb)
 	mclock := NewMocklayerClock(ctrl)
 	mpub := pubsubmocks.NewMockPublisher(ctrl)
@@ -104,7 +100,7 @@ func newTestHandler(tb testing.TB, goldenATXID types.ATXID) *testHandler {
 	mbeacon := NewMockAtxReceiver(ctrl)
 	mtortoise := mocks.NewMockTortoise(ctrl)
 
-	atxHdlr := NewHandler(localID, cdb, verifier, mclock, mpub, mockFetch, 1, goldenATXID, mValidator, mbeacon, mtortoise, lg, PoetConfig{})
+	atxHdlr := NewHandler(localID, cdb, signing.NewEdVerifier(), mclock, mpub, mockFetch, 1, goldenATXID, mValidator, mbeacon, mtortoise, lg, PoetConfig{})
 	return &testHandler{
 		Handler: atxHdlr,
 
@@ -816,60 +812,6 @@ func BenchmarkNewActivationDb(b *testing.B) {
 		copy(pPrevAtxs, prevAtxs)
 	}
 	b.Logf("\n>>> Total time: %v\n\n", time.Since(start))
-}
-
-func TestHandler_AwaitAtx(t *testing.T) {
-	// Arrange
-	r := require.New(t)
-
-	goldenATXID := types.ATXID{2, 3, 4}
-	atxHdlr := newTestHandler(t, goldenATXID)
-	atxHdlr.mbeacon.EXPECT().OnAtx(gomock.Any())
-	atxHdlr.mtortoise.EXPECT().OnAtx(gomock.Any())
-
-	sig, err := signing.NewEdSigner()
-	r.NoError(err)
-	coinbase := types.Address{2, 4, 5}
-	currentLayer := types.LayerID(10)
-
-	// Act & Assert
-	atx := newActivationTx(t, sig, 0, types.EmptyATXID, types.EmptyATXID, nil, currentLayer.GetEpoch(), 0, 100, coinbase, 100, &types.NIPost{})
-	ch := atxHdlr.AwaitAtx(atx.ID())
-	r.Len(atxHdlr.atxChannels, 1) // channel was created
-
-	select {
-	case <-ch:
-		r.Fail("notified before ATX was stored")
-	default:
-	}
-
-	r.NoError(atxHdlr.ProcessAtx(context.Background(), atx))
-	r.Len(atxHdlr.atxChannels, 0) // after notifying subscribers, channel is cleared
-
-	select {
-	case <-ch:
-	default:
-		r.Fail("not notified after ATX was stored")
-	}
-
-	ch = atxHdlr.AwaitAtx(atx.ID())
-	r.Len(atxHdlr.atxChannels, 0) // awaiting an already stored ATX should not create a channel, but return a closed one
-
-	select {
-	case <-ch:
-	default:
-		r.Fail("open channel returned for already stored ATX")
-	}
-
-	otherID := types.ATXID(types.HexToHash32("abcd"))
-	atxHdlr.AwaitAtx(otherID)
-	r.Len(atxHdlr.atxChannels, 1) // after first subscription - channel is created
-	atxHdlr.AwaitAtx(otherID)
-	r.Len(atxHdlr.atxChannels, 1) // second subscription to same id - no additional channel
-	atxHdlr.UnsubscribeAtx(otherID)
-	r.Len(atxHdlr.atxChannels, 1) // first unsubscribe doesn't clear the channel
-	atxHdlr.UnsubscribeAtx(otherID)
-	r.Len(atxHdlr.atxChannels, 0) // last unsubscribe clears the channel
 }
 
 func TestHandler_HandleGossipAtx(t *testing.T) {

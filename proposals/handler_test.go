@@ -87,8 +87,6 @@ func fullMockSet(tb testing.TB) *mockSet {
 func createTestHandler(t *testing.T) *testHandler {
 	types.SetLayersPerEpoch(layersPerEpoch)
 	ms := fullMockSet(t)
-	edVerifier, err := signing.NewEdVerifier()
-	require.NoError(t, err)
 	db := datastore.NewCachedDB(sql.InMemory(), logtest.New(t))
 	ms.md.EXPECT().GetBallot(gomock.Any()).AnyTimes().DoAndReturn(func(id types.BallotID) *tortoise.BallotData {
 		ballot, err := ballots.Get(db, id)
@@ -109,7 +107,7 @@ func createTestHandler(t *testing.T) *testHandler {
 		return data
 	})
 	return &testHandler{
-		Handler: NewHandler(db, edVerifier, ms.mpub, ms.mf, ms.mbc, ms.mm, ms.md, ms.mvrf, ms.mclock,
+		Handler: NewHandler(db, signing.NewEdVerifier(), ms.mpub, ms.mf, ms.mbc, ms.mm, ms.md, ms.mvrf, ms.mclock,
 			WithLogger(logtest.New(t)),
 			WithConfig(Config{
 				LayerSize:      layerAvgSize,
@@ -378,6 +376,7 @@ func TestBallot_RefBallotEmptyActiveSet(t *testing.T) {
 	th := createTestHandlerNoopDecoder(t)
 	activeSet := types.ATXIDList{{1}, {2}}
 	b := createRefBallot(t, activeSet)
+	b.Layer = th.clock.CurrentLayer()
 	signAndInit(t, b)
 	data := codec.MustEncode(b)
 	createAtx(t, th.cdb.Database, b.Layer.GetEpoch()-1, b.AtxID, b.SmesherID)
@@ -385,34 +384,6 @@ func TestBallot_RefBallotEmptyActiveSet(t *testing.T) {
 	th.mf.EXPECT().RegisterPeerHashes(peer, collectHashes(*b))
 	th.mf.EXPECT().GetActiveSet(gomock.Any(), b.EpochData.ActiveSetHash)
 	require.ErrorIs(t, th.HandleSyncedBallot(context.Background(), b.ID().AsHash32(), peer, data), sql.ErrNotFound)
-}
-
-// TODO: remove after the network no longer populate ActiveSet in ballot.
-func TestBallot_RefBallotDuplicateInActiveSet(t *testing.T) {
-	th := createTestHandlerNoopDecoder(t)
-	activeSet := types.ATXIDList{{1}, {2}, {1}}
-	b := createRefBallot(t, activeSet)
-	b.ActiveSet = activeSet
-	signAndInit(t, b)
-	createAtx(t, th.cdb.Database, b.Layer.GetEpoch()-1, b.AtxID, b.SmesherID)
-	data := codec.MustEncode(b)
-	peer := p2p.Peer("buddy")
-	th.mf.EXPECT().RegisterPeerHashes(peer, collectHashes(*b))
-	require.ErrorContains(t, th.HandleSyncedBallot(context.Background(), b.ID().AsHash32(), peer, data), "not sorted")
-}
-
-// TODO: remove after the network no longer populate ActiveSet in ballot.
-func TestBallot_RefBallotActiveSetNotSorted(t *testing.T) {
-	th := createTestHandlerNoopDecoder(t)
-	activeSet := types.ATXIDList(types.RandomActiveSet(11))
-	b := createRefBallot(t, activeSet)
-	b.ActiveSet = activeSet
-	signAndInit(t, b)
-	createAtx(t, th.cdb.Database, b.Layer.GetEpoch()-1, b.AtxID, b.SmesherID)
-	data := codec.MustEncode(b)
-	peer := p2p.Peer("buddy")
-	th.mf.EXPECT().RegisterPeerHashes(peer, collectHashes(*b))
-	require.ErrorContains(t, th.HandleSyncedBallot(context.Background(), b.ID().AsHash32(), peer, data), "not sorted")
 }
 
 func TestBallot_NotRefBallotButHasEpochData(t *testing.T) {
@@ -767,7 +738,7 @@ func TestBallot_MaliciousProofIgnoredInSyncFlow(t *testing.T) {
 
 func TestBallot_RefBallot(t *testing.T) {
 	th := createTestHandlerNoopDecoder(t)
-	lid := types.LayerID(100)
+	lid := th.clock.CurrentLayer()
 	supported := []*types.Block{
 		types.NewExistingBlock(types.BlockID{1}, types.InnerBlock{LayerIndex: lid.Sub(1)}),
 		types.NewExistingBlock(types.BlockID{2}, types.InnerBlock{LayerIndex: lid.Sub(2)}),

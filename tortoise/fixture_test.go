@@ -574,6 +574,7 @@ func (u *updateActions) execute(trt *Tortoise) {
 	u.tb.Helper()
 	updates := trt.Updates()
 	for i := range updates {
+		trt.OnApplied(updates[i].Layer, updates[i].Opinion)
 		// TODO(dshulyak) don't know yet how to implement
 		updates[i].Opinion = types.Hash32{}
 	}
@@ -717,12 +718,6 @@ func (s *session) withLayerSize(val uint32) *session {
 func (s *session) withDelay(val uint32) *session {
 	s.ensureConfig()
 	s.config.BadBeaconVoteDelayLayers = val
-	return s
-}
-
-func (s *session) withMinActiveSetWeight(weight uint64) *session {
-	s.ensureConfig()
-	s.config.MinimalActiveSetWeight = weight
 	return s
 }
 
