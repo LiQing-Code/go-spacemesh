@@ -130,11 +130,8 @@ func New(listener string, logger *zap.Logger, config Config, grpcOpts ...grpc.Se
 	// TODO: Configure maxconns, maxconcurrentcons ..
 	opts = append(opts,
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle:     time.Minute * 120,
-			MaxConnectionAge:      time.Minute * 180,
-			MaxConnectionAgeGrace: time.Minute * 10,
-			Time:                  time.Minute,
-			Timeout:               time.Minute * 3,
+			Time:    time.Minute,
+			Timeout: time.Minute * 3,
 		}),
 	)
 
