@@ -9,14 +9,13 @@ import (
 	"github.com/spacemeshos/go-spacemesh/sql"
 )
 
-const fullQuery = "select id, atx, base_tick_height, tick_count, pubkey, effective_num_units, received, epoch, sequence, coinbase from atxs"
+const fullQuery = `select id, atx, base_tick_height, tick_count, pubkey,
+	effective_num_units, received, epoch, sequence, coinbase from atxs`
 
-func load(db sql.Executor, query string, enc sql.Encoder) (*types.VerifiedActivationTx, error) {
-	var (
-		v     *types.VerifiedActivationTx
-		myerr error
-	)
-	_, err := db.Exec(query, enc, func(stmt *sql.Statement) bool {
+type decoderCallback func(*types.VerifiedActivationTx, error) bool
+
+func decoder(fn decoderCallback) sql.Decoder {
+	return func(stmt *sql.Statement) bool {
 		var (
 			a  types.ActivationTx
 			id types.ATXID
@@ -24,9 +23,8 @@ func load(db sql.Executor, query string, enc sql.Encoder) (*types.VerifiedActiva
 		stmt.ColumnBytes(0, id[:])
 		checkpointed := stmt.ColumnLen(1) == 0
 		if !checkpointed {
-			if _, decodeErr := codec.DecodeFrom(stmt.ColumnReader(1), &a); decodeErr != nil {
-				myerr = fmt.Errorf("decode %w", decodeErr)
-				return true
+			if _, err := codec.DecodeFrom(stmt.ColumnReader(1), &a); err != nil {
+				return fn(nil, fmt.Errorf("decode %w", err))
 			}
 		}
 		a.SetID(id)
@@ -45,11 +43,26 @@ func load(db sql.Executor, query string, enc sql.Encoder) (*types.VerifiedActiva
 		a.PublishEpoch = types.EpochID(uint32(stmt.ColumnInt(7)))
 		a.Sequence = uint64(stmt.ColumnInt64(8))
 		stmt.ColumnBytes(9, a.Coinbase[:])
-		v, myerr = a.Verify(baseTickHeight, tickCount)
-		return myerr == nil
-	})
-	if err == nil && myerr != nil {
-		err = myerr
+		v, err := a.Verify(baseTickHeight, tickCount)
+		if err != nil {
+			return fn(nil, err)
+		}
+		return fn(v, nil)
+	}
+}
+
+func load(db sql.Executor, query string, enc sql.Encoder) (*types.VerifiedActivationTx, error) {
+	var (
+		v    *types.VerifiedActivationTx
+		derr error
+	)
+	_, err := db.Exec(query, enc, decoder(func(atx *types.VerifiedActivationTx, err error) bool {
+		v = atx
+		derr = err
+		return derr == nil
+	}))
+	if err == nil && derr != nil {
+		err = derr
 	}
 	return v, err
 }
@@ -71,7 +84,11 @@ func Get(db sql.Executor, id types.ATXID) (*types.VerifiedActivationTx, error) {
 }
 
 // GetByEpochAndNodeID gets any ATX by the specified NodeID published in the given epoch.
-func GetByEpochAndNodeID(db sql.Executor, epoch types.EpochID, nodeID types.NodeID) (*types.VerifiedActivationTx, error) {
+func GetByEpochAndNodeID(
+	db sql.Executor,
+	epoch types.EpochID,
+	nodeID types.NodeID,
+) (*types.VerifiedActivationTx, error) {
 	enc := func(stmt *sql.Statement) {
 		stmt.BindInt64(1, int64(epoch))
 		stmt.BindBytes(2, nodeID.Bytes())
@@ -286,7 +303,8 @@ func Add(db sql.Executor, atx *types.VerifiedActivationTx) error {
 	}
 
 	_, err = db.Exec(`
-		insert into atxs (id, epoch, effective_num_units, commitment_atx, nonce, pubkey, atx, received, base_tick_height, tick_count, sequence, coinbase)
+		insert into atxs (id, epoch, effective_num_units, commitment_atx, nonce,
+			 pubkey, atx, received, base_tick_height, tick_count, sequence, coinbase)
 		values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);`, enc, nil)
 	if err != nil {
 		return fmt.Errorf("insert ATX ID %v: %w", atx.ID(), err)
@@ -294,11 +312,11 @@ func Add(db sql.Executor, atx *types.VerifiedActivationTx) error {
 	return nil
 }
 
-// GetIDWithMaxHeight returns the ID of the atx from the last 2 epoch with the highest (or tied for the highest) tick height.
-// it is possible that some poet servers are faster than others and the network ends up having its highest ticked atx still in
-// previous epoch and the atxs building on top of it have not been published yet. selecting from the last two epochs to strike
-// a balance between being fair to honest miners while not giving unfair advantage for malicious actors who retroactively
-// publish a high tick atx many epochs back.
+// GetIDWithMaxHeight returns the ID of the atx from the last 2 epoch with the highest (or tied for the highest)
+// tick height. It is possible that some poet servers are faster than others and the network ends up having its
+// highest ticked atx still in previous epoch and the atxs building on top of it have not been published yet.
+// Selecting from the last two epochs to strike a balance between being fair to honest miners while not giving
+// unfair advantage for malicious actors who retroactively publish a high tick atx many epochs back.
 func GetIDWithMaxHeight(db sql.Executor, pref types.NodeID) (types.ATXID, error) {
 	var (
 		rst types.ATXID
@@ -396,7 +414,8 @@ func AddCheckpointed(db sql.Executor, catx *CheckpointAtx) error {
 	}
 
 	_, err := db.Exec(`
-		insert into atxs (id, epoch, effective_num_units, commitment_atx, nonce, base_tick_height, tick_count, sequence, pubkey, coinbase, received)
+		insert into atxs (id, epoch, effective_num_units, commitment_atx, nonce,
+			base_tick_height, tick_count, sequence, pubkey, coinbase, received)
 		values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0);`, enc, nil)
 	if err != nil {
 		return fmt.Errorf("insert checkpoint ATX %v: %w", catx.ID, err)
@@ -431,4 +450,22 @@ func LatestEpoch(db sql.Executor) (types.EpochID, error) {
 		return epoch, fmt.Errorf("latest epoch: %w", err)
 	}
 	return epoch, nil
+}
+
+func IterateAtxs(db sql.Executor, from, to types.EpochID, fn func(*types.VerifiedActivationTx) bool) error {
+	var derr error
+	_, err := db.Exec(fullQuery+" where epoch between ?1 and ?2", func(stmt *sql.Statement) {
+		stmt.BindInt64(1, int64(from.Uint32()))
+		stmt.BindInt64(2, int64(to.Uint32()))
+	}, decoder(func(atx *types.VerifiedActivationTx, err error) bool {
+		if atx != nil {
+			return fn(atx)
+		}
+		derr = err
+		return derr == nil
+	}))
+	if err != nil {
+		return err
+	}
+	return derr
 }

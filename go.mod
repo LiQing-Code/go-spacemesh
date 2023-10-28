@@ -11,7 +11,7 @@ require (
 	github.com/gofrs/flock v0.8.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/gofuzz v1.2.0
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/grafana/pyroscope-go v1.0.4
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.18.0
@@ -47,11 +47,11 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/zeebo/blake3 v0.2.3
-	go.uber.org/atomic v1.11.0
 	go.uber.org/mock v0.3.0
 	go.uber.org/zap v1.26.0
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/sync v0.4.0
+	golang.org/x/time v0.3.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231016165738-49dd2c1f3d0b
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
@@ -206,7 +206,6 @@ require (
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
