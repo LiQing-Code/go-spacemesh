@@ -15,7 +15,6 @@ import (
 	"github.com/spacemeshos/go-spacemesh/beacon"
 	"github.com/spacemeshos/go-spacemesh/bootstrap"
 	"github.com/spacemeshos/go-spacemesh/checkpoint"
-	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/config"
 	"github.com/spacemeshos/go-spacemesh/datastore"
 	"github.com/spacemeshos/go-spacemesh/fetch"
@@ -36,7 +35,7 @@ func testnet() config.Config {
 	p2pconfig := p2p.DefaultConfig()
 
 	smeshing := config.DefaultSmeshingConfig()
-	smeshing.Opts.ProviderID.SetUint32(initialization.CPUProviderID())
+	smeshing.Opts.ProviderID.SetInt64(int64(initialization.CPUProviderID()))
 	smeshing.ProvingOpts.Nonces = 288
 	smeshing.ProvingOpts.Threads = uint(runtime.NumCPU() * 3 / 4)
 	if smeshing.ProvingOpts.Threads < 1 {
@@ -85,7 +84,9 @@ func testnet() config.Config {
 			WindowSize:               10000,
 			MaxExceptions:            1000,
 			BadBeaconVoteDelayLayers: 4032,
-			MinimalActiveSetWeight:   []types.EpochMinimalActiveWeight{{Weight: 10_000}},
+			// 100 - is assumed minimal number of units
+			// 100 - half of the expected poet ticks
+			MinimalActiveSetWeight: 100 * 100,
 		},
 		HARE: hareConfig.Config{
 			Disable:         hare3conf.EnableLayer,

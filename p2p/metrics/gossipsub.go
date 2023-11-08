@@ -13,12 +13,7 @@ import (
 
 var (
 	totalPeers       = metrics.NewGauge("total_peers", subsystem, "Total number of peers", nil)
-	peersPerProtocol = metrics.NewGauge(
-		"peers_per_protocol",
-		subsystem,
-		"Number of peers per protocol",
-		[]string{"protocol"},
-	)
+	peersPerProtocol = metrics.NewGauge("peers_per_protocol", subsystem, "Number of peers per protocol", []string{"protocol"})
 )
 
 var (

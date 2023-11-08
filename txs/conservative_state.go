@@ -93,12 +93,7 @@ func (cs *ConservativeState) SelectProposalTXs(lid types.LayerID, numEligibility
 	return getProposalTXs(logger.WithFields(lid), numTXs, predictedBlock, byAddrAndNonce)
 }
 
-func getProposalTXs(
-	logger log.Log,
-	numTXs int,
-	predictedBlock []*NanoTX,
-	byAddrAndNonce map[types.Address][]*NanoTX,
-) []types.TransactionID {
+func getProposalTXs(logger log.Log, numTXs int, predictedBlock []*NanoTX, byAddrAndNonce map[types.Address][]*NanoTX) []types.TransactionID {
 	if len(predictedBlock) <= numTXs {
 		result := make([]types.TransactionID, 0, len(predictedBlock))
 		for _, ntx := range predictedBlock {
@@ -153,11 +148,7 @@ func (cs *ConservativeState) GetProjection(addr types.Address) (uint64, uint64) 
 }
 
 // LinkTXsWithProposal associates the transactions to a proposal.
-func (cs *ConservativeState) LinkTXsWithProposal(
-	lid types.LayerID,
-	pid types.ProposalID,
-	tids []types.TransactionID,
-) error {
+func (cs *ConservativeState) LinkTXsWithProposal(lid types.LayerID, pid types.ProposalID, tids []types.TransactionID) error {
 	return cs.cache.LinkTXsWithProposal(cs.db, lid, pid, tids)
 }
 
@@ -195,9 +186,7 @@ func (cs *ConservativeState) GetMeshTransaction(tid types.TransactionID) (*types
 }
 
 // GetMeshTransactions retrieves a list of txs by their id's.
-func (cs *ConservativeState) GetMeshTransactions(
-	ids []types.TransactionID,
-) ([]*types.MeshTransaction, map[types.TransactionID]struct{}) {
+func (cs *ConservativeState) GetMeshTransactions(ids []types.TransactionID) ([]*types.MeshTransaction, map[types.TransactionID]struct{}) {
 	missing := make(map[types.TransactionID]struct{})
 	mtxs := make([]*types.MeshTransaction, 0, len(ids))
 	for _, tid := range ids {
@@ -216,11 +205,7 @@ func (cs *ConservativeState) GetMeshTransactions(
 }
 
 // GetTransactionsByAddress retrieves txs for a single address in between layers [from, to].
-// Guarantees that transaction will appear exactly once, even if origin and recipient is the same,
-// and in insertion order.
-func (cs *ConservativeState) GetTransactionsByAddress(
-	from, to types.LayerID,
-	address types.Address,
-) ([]*types.MeshTransaction, error) {
+// Guarantees that transaction will appear exactly once, even if origin and recipient is the same, and in insertion order.
+func (cs *ConservativeState) GetTransactionsByAddress(from, to types.LayerID, address types.Address) ([]*types.MeshTransaction, error) {
 	return transactions.GetByAddress(cs.db, from, to, address)
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/log"
 )
 
-// BytesToNodeID is a helper to copy buffer into a NodeID.
+// BytesToNodeID is a helper to copy buffer into NodeID struct.
 func BytesToNodeID(buf []byte) (id NodeID) {
 	copy(id[:], buf)
 	return id

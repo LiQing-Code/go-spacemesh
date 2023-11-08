@@ -1,15 +1,18 @@
 package activation
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
 
 	"github.com/spacemeshos/post/config"
 	"github.com/spacemeshos/post/initialization"
 	"github.com/spacemeshos/post/shared"
+	"github.com/spacemeshos/post/verifying"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/spacemeshos/go-spacemesh/common/types"
@@ -20,51 +23,53 @@ import (
 )
 
 func TestPostSetupManager(t *testing.T) {
+	req := require.New(t)
+
 	mgr := newTestPostManager(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var eg errgroup.Group
+	lastStatus := &PostSetupStatus{}
 	eg.Go(func() error {
 		timer := time.NewTicker(50 * time.Millisecond)
 		defer timer.Stop()
 
-		lastStatus := &PostSetupStatus{}
 		for {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-timer.C:
 				status := mgr.Status()
-				require.GreaterOrEqual(t, status.NumLabelsWritten, lastStatus.NumLabelsWritten)
+				req.GreaterOrEqual(status.NumLabelsWritten, lastStatus.NumLabelsWritten)
 
-				if status.NumLabelsWritten == uint64(mgr.opts.NumUnits)*mgr.cfg.LabelsPerUnit {
-					return nil
+				if status.NumLabelsWritten < uint64(mgr.opts.NumUnits)*mgr.cfg.LabelsPerUnit {
+					req.Equal(PostSetupStateInProgress, status.State)
 				}
-				require.Contains(t, []PostSetupState{PostSetupStatePrepared, PostSetupStateInProgress}, status.State)
-				lastStatus = status
 			}
 		}
 	})
 
 	// Create data.
-	require.NoError(t, mgr.PrepareInitializer(mgr.opts))
-	require.NoError(t, mgr.StartSession(context.Background()))
-	require.NoError(t, eg.Wait())
-	require.Equal(t, PostSetupStateComplete, mgr.Status().State)
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
+	req.NoError(mgr.StartSession(context.Background()))
+	cancel()
+	_ = eg.Wait()
+
+	req.Equal(PostSetupStateComplete, mgr.Status().State)
 
 	// Create data (same opts).
-	require.NoError(t, mgr.PrepareInitializer(mgr.opts))
-	require.NoError(t, mgr.StartSession(context.Background()))
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
+	req.NoError(mgr.StartSession(context.Background()))
 
 	// Cleanup.
-	require.NoError(t, mgr.Reset())
+	req.NoError(mgr.Reset())
 
 	// Create data (same opts, after deletion).
-	require.NoError(t, mgr.PrepareInitializer(mgr.opts))
-	require.NoError(t, mgr.StartSession(context.Background()))
-	require.Equal(t, PostSetupStateComplete, mgr.Status().State)
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
+	req.NoError(mgr.StartSession(context.Background()))
+	req.Equal(PostSetupStateComplete, mgr.Status().State)
 }
 
 // Checks that PrepareInitializer returns an error when invalid opts are given.
@@ -76,28 +81,44 @@ func TestPostSetupManager_PrepareInitializer(t *testing.T) {
 
 	mgr := newTestPostManager(t)
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
 	// check no error with good options.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(ctx, mgr.opts))
 
 	defaultConfig := config.DefaultConfig()
 
 	// Check that invalid options return errors
 	opts := mgr.opts
 	opts.ComputeBatchSize = 3
-	req.Error(mgr.PrepareInitializer(opts))
+	req.Error(mgr.PrepareInitializer(ctx, opts))
 
 	opts = mgr.opts
 	opts.NumUnits = defaultConfig.MaxNumUnits + 1
-	req.Error(mgr.PrepareInitializer(opts))
+	req.Error(mgr.PrepareInitializer(ctx, opts))
 
 	opts = mgr.opts
 	opts.NumUnits = defaultConfig.MinNumUnits - 1
-	req.Error(mgr.PrepareInitializer(opts))
+	req.Error(mgr.PrepareInitializer(ctx, opts))
 
 	opts = mgr.opts
 	opts.Scrypt.N = 0
 	req.Error(opts.Scrypt.Validate())
-	req.Error(mgr.PrepareInitializer(opts))
+	req.Error(mgr.PrepareInitializer(ctx, opts))
+}
+
+// TODO(mafa): remove, see https://github.com/spacemeshos/go-spacemesh/issues/4801
+func TestPostSetupManager_PrepareInitializer_BestProvider(t *testing.T) {
+	req := require.New(t)
+
+	mgr := newTestPostManager(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	mgr.opts.ProviderID.SetInt64(-1)
+	req.NoError(mgr.PrepareInitializer(ctx, mgr.opts))
 }
 
 func TestPostSetupManager_StartSession_WithoutProvider_Error(t *testing.T) {
@@ -107,7 +128,7 @@ func TestPostSetupManager_StartSession_WithoutProvider_Error(t *testing.T) {
 	mgr.opts.ProviderID.value = nil
 
 	// Create data.
-	req.NoError(mgr.PrepareInitializer(mgr.opts)) // prepare is fine without provider
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts)) // prepare is fine without provider
 	req.ErrorContains(mgr.StartSession(context.Background()), "no provider specified")
 
 	req.Equal(PostSetupStateError, mgr.Status().State)
@@ -122,7 +143,7 @@ func TestPostSetupManager_StartSession_WithoutProviderAfterInit_OK(t *testing.T)
 	defer cancel()
 
 	// Create data.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(ctx, mgr.opts))
 	req.NoError(mgr.StartSession(ctx))
 
 	req.Equal(PostSetupStateComplete, mgr.Status().State)
@@ -134,7 +155,7 @@ func TestPostSetupManager_StartSession_WithoutProviderAfterInit_OK(t *testing.T)
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(ctx, mgr.opts))
 	req.NoError(mgr.StartSession(ctx))
 
 	req.Equal(PostSetupStateComplete, mgr.Status().State)
@@ -153,10 +174,10 @@ func TestPostSetupManager_InitializationCallSequence(t *testing.T) {
 	// Should fail since we have not prepared.
 	req.Error(mgr.StartSession(ctx))
 
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(ctx, mgr.opts))
 
 	// Should fail since we need to call StartSession after PrepareInitializer.
-	req.Error(mgr.PrepareInitializer(mgr.opts))
+	req.Error(mgr.PrepareInitializer(ctx, mgr.opts))
 
 	req.NoError(mgr.StartSession(ctx))
 
@@ -170,7 +191,7 @@ func TestPostSetupManager_StateError(t *testing.T) {
 
 	mgr := newTestPostManager(t)
 	mgr.opts.NumUnits = 0
-	req.Error(mgr.PrepareInitializer(mgr.opts))
+	req.Error(mgr.PrepareInitializer(context.Background(), mgr.opts))
 	// Verify Status returns StateError
 	req.Equal(PostSetupStateError, mgr.Status().State)
 }
@@ -186,7 +207,7 @@ func TestPostSetupManager_InitialStatus(t *testing.T) {
 	req.Zero(status.NumLabelsWritten)
 
 	// Create data.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
 	req.NoError(mgr.StartSession(context.Background()))
 	req.Equal(PostSetupStateComplete, mgr.Status().State)
 
@@ -197,6 +218,79 @@ func TestPostSetupManager_InitialStatus(t *testing.T) {
 	status = mgr.Status()
 	req.Equal(PostSetupStateNotStarted, status.State)
 	req.Zero(status.NumLabelsWritten)
+}
+
+func TestPostSetupManager_GenerateProof(t *testing.T) {
+	req := require.New(t)
+	ch := make([]byte, 32)
+
+	mgr := newTestPostManager(t)
+
+	// Attempt to generate proof.
+	_, _, err := mgr.GenerateProof(context.Background(), ch)
+	req.EqualError(err, errNotComplete.Error())
+
+	// Create data.
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
+	req.NoError(mgr.StartSession(context.Background()))
+
+	// Generate proof.
+	p, m, err := mgr.GenerateProof(context.Background(), ch)
+	req.NoError(err)
+
+	// Verify the proof
+	verifier, err := verifying.NewProofVerifier()
+	req.NoError(err)
+	defer verifier.Close()
+	err = verifier.Verify(&shared.Proof{
+		Nonce:   p.Nonce,
+		Indices: p.Indices,
+		Pow:     p.Pow,
+	}, &shared.ProofMetadata{
+		NodeId:          mgr.id.Bytes(),
+		CommitmentAtxId: mgr.goldenATXID.Bytes(),
+		Challenge:       ch,
+		NumUnits:        mgr.opts.NumUnits,
+		LabelsPerUnit:   m.LabelsPerUnit,
+	},
+		config.DefaultConfig(),
+		logtest.New(t).WithName("verifying").Zap(),
+		verifying.WithLabelScryptParams(mgr.opts.Scrypt),
+	)
+	req.NoError(err)
+
+	// Re-instantiate `PostSetupManager`.
+	mgr = newTestPostManager(t)
+
+	// Attempt to generate proof.
+	_, _, err = mgr.GenerateProof(context.Background(), ch)
+	req.ErrorIs(err, errNotComplete)
+}
+
+func TestPostSetupManager_VRFNonce(t *testing.T) {
+	req := require.New(t)
+
+	mgr := newTestPostManager(t)
+
+	// Attempt to get nonce.
+	_, err := mgr.VRFNonce()
+	req.ErrorIs(err, errNotComplete)
+
+	// Create data.
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
+	req.NoError(mgr.StartSession(context.Background()))
+
+	// Get nonce.
+	nonce, err := mgr.VRFNonce()
+	req.NoError(err)
+	req.NotZero(nonce)
+
+	// Re-instantiate `PostSetupManager`.
+	mgr = newTestPostManager(t)
+
+	// Attempt to get nonce.
+	_, err = mgr.VRFNonce()
+	req.ErrorIs(err, errNotComplete)
 }
 
 func TestPostSetupManager_Stop(t *testing.T) {
@@ -210,7 +304,7 @@ func TestPostSetupManager_Stop(t *testing.T) {
 	req.Zero(status.NumLabelsWritten)
 
 	// Create data.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
 	req.NoError(mgr.StartSession(context.Background()))
 
 	// Verify state.
@@ -223,7 +317,7 @@ func TestPostSetupManager_Stop(t *testing.T) {
 	req.Equal(PostSetupStateNotStarted, mgr.Status().State)
 
 	// Create data again.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
 	req.NoError(mgr.StartSession(context.Background()))
 
 	// Verify state.
@@ -238,7 +332,7 @@ func TestPostSetupManager_Stop_WhileInProgress(t *testing.T) {
 	mgr.opts.NumUnits = mgr.cfg.MaxNumUnits
 
 	// Create data.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
 	ctx, cancel := context.WithCancel(context.Background())
 	var eg errgroup.Group
 	eg.Go(func() error {
@@ -261,7 +355,7 @@ func TestPostSetupManager_Stop_WhileInProgress(t *testing.T) {
 	req.LessOrEqual(status.NumLabelsWritten, uint64(mgr.opts.NumUnits)*mgr.cfg.LabelsPerUnit)
 
 	// Continue to create data.
-	req.NoError(mgr.PrepareInitializer(mgr.opts))
+	req.NoError(mgr.PrepareInitializer(context.Background(), mgr.opts))
 	req.NoError(mgr.StartSession(context.Background()))
 
 	// Verify status.
@@ -274,7 +368,7 @@ func TestPostSetupManager_findCommitmentAtx_UsesLatestAtx(t *testing.T) {
 	mgr := newTestPostManager(t)
 
 	latestAtx := addPrevAtx(t, mgr.db, 1, mgr.signer)
-	atx, err := mgr.findCommitmentAtx()
+	atx, err := mgr.findCommitmentAtx(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, latestAtx.ID(), atx)
 }
@@ -282,9 +376,44 @@ func TestPostSetupManager_findCommitmentAtx_UsesLatestAtx(t *testing.T) {
 func TestPostSetupManager_findCommitmentAtx_DefaultsToGoldenAtx(t *testing.T) {
 	mgr := newTestPostManager(t)
 
-	atx, err := mgr.findCommitmentAtx()
+	atx, err := mgr.findCommitmentAtx(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, mgr.goldenATXID, atx)
+}
+
+func TestPostSetupManager_Providers_includesCPU(t *testing.T) {
+	mgr := newTestPostManager(t)
+
+	providers, err := mgr.Providers()
+	require.NoError(t, err)
+
+	for _, p := range providers {
+		if p.ID == initialization.CPUProviderID() {
+			return
+		}
+	}
+	require.Fail(t, "no CPU provider found")
+}
+
+func TestPostSetupManager_BestProvider(t *testing.T) {
+	mgr := newTestPostManager(t)
+
+	providers, err := mgr.BestProvider()
+	require.NoError(t, err)
+	require.NotNil(t, providers)
+}
+
+func TestPostSetupManager_Benchmark(t *testing.T) {
+	mgr := newTestPostManager(t)
+
+	providers, err := mgr.Providers()
+	require.NoError(t, err)
+
+	for _, p := range providers {
+		score, err := mgr.Benchmark(p)
+		require.NoError(t, err)
+		require.NotZero(t, score)
+	}
 }
 
 func TestPostSetupManager_getCommitmentAtx_getsCommitmentAtxFromPostMetadata(t *testing.T) {
@@ -297,7 +426,7 @@ func TestPostSetupManager_getCommitmentAtx_getsCommitmentAtxFromPostMetadata(t *
 		NodeId:          mgr.signer.NodeID().Bytes(),
 	})
 
-	atxid, err := mgr.commitmentAtx(mgr.opts.DataDir)
+	atxid, err := mgr.commitmentAtx(context.Background(), mgr.opts.DataDir)
 	require.NoError(t, err)
 	require.NotNil(t, atxid)
 	require.Equal(t, commitmentAtx, atxid)
@@ -312,7 +441,7 @@ func TestPostSetupManager_getCommitmentAtx_getsCommitmentAtxFromInitialAtx(t *te
 	atx.CommitmentATX = &commitmentAtx
 	addAtx(t, mgr.cdb, mgr.signer, atx)
 
-	atxid, err := mgr.commitmentAtx(mgr.opts.DataDir)
+	atxid, err := mgr.commitmentAtx(context.Background(), mgr.opts.DataDir)
 	require.NoError(t, err)
 	require.Equal(t, commitmentAtx, atxid)
 }
@@ -326,8 +455,27 @@ type testPostManager struct {
 	cdb    *datastore.CachedDB
 }
 
-func newTestPostManager(tb testing.TB) *testPostManager {
+type newPostSetupMgrOptions struct {
+	cfg PostConfig
+}
+
+type newPostSetupMgrOptionFunc func(*newPostSetupMgrOptions)
+
+func withPostConfig(cfg PostConfig) newPostSetupMgrOptionFunc {
+	return func(o *newPostSetupMgrOptions) {
+		o.cfg = cfg
+	}
+}
+
+func newTestPostManager(tb testing.TB, o ...newPostSetupMgrOptionFunc) *testPostManager {
 	tb.Helper()
+
+	options := newPostSetupMgrOptions{
+		cfg: DefaultPostConfig(),
+	}
+	for _, opt := range o {
+		opt(&options)
+	}
 
 	sig, err := signing.NewEdSigner()
 	require.NoError(tb, err)
@@ -335,13 +483,15 @@ func newTestPostManager(tb testing.TB) *testPostManager {
 
 	opts := DefaultPostSetupOpts()
 	opts.DataDir = tb.TempDir()
-	opts.ProviderID.SetUint32(initialization.CPUProviderID())
+	opts.ProviderID.SetInt64(int64(initialization.CPUProviderID()))
 	opts.Scrypt.N = 2 // Speedup initialization in tests.
 
 	goldenATXID := types.ATXID{2, 3, 4}
 
 	cdb := datastore.NewCachedDB(sql.InMemory(), logtest.New(tb))
-	mgr, err := NewPostSetupManager(id, DefaultPostConfig(), zaptest.NewLogger(tb), cdb, goldenATXID)
+	provingOpts := DefaultPostProvingOpts()
+	provingOpts.Flags = config.RecommendedPowFlags()
+	mgr, err := NewPostSetupManager(id, options.cfg, logtest.New(tb, zapcore.DebugLevel), cdb, goldenATXID, provingOpts)
 	require.NoError(tb, err)
 
 	return &testPostManager{
@@ -350,4 +500,66 @@ func newTestPostManager(tb testing.TB) *testPostManager {
 		signer:           sig,
 		cdb:              cdb,
 	}
+}
+
+func TestSettingPowDifficulty(t *testing.T) {
+	t.Parallel()
+	expected := bytes.Repeat([]byte{0x01, 0x02, 0x03, 0x04}, 8)
+	encoded := hex.EncodeToString(expected)
+	t.Run("parse 32B hex", func(t *testing.T) {
+		t.Parallel()
+		d := PowDifficulty{}
+		err := d.Set(encoded)
+		require.NoError(t, err)
+		require.Equal(t, expected, d[:])
+	})
+	t.Run("input too short", func(t *testing.T) {
+		t.Parallel()
+		d := PowDifficulty{}
+		require.Error(t, d.Set("123"))
+		require.Equal(t, PowDifficulty{}, d)
+	})
+	t.Run("input too long", func(t *testing.T) {
+		t.Parallel()
+		d := PowDifficulty{}
+		require.Error(t, d.Set(hex.EncodeToString(bytes.Repeat([]byte{0x01}, 33))))
+		require.Equal(t, PowDifficulty{}, d)
+	})
+	t.Run("not a hex string", func(t *testing.T) {
+		t.Parallel()
+		encoded := encoded[:len(encoded)-1] + "G"
+		d := PowDifficulty{}
+		require.Error(t, d.Set(encoded))
+		require.Equal(t, PowDifficulty{}, d)
+	})
+}
+
+func TestSettingProviderID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid value", func(t *testing.T) {
+		t.Parallel()
+		id := new(PostProviderID)
+		require.NoError(t, id.Set("1234"))
+		require.Equal(t, int64(1234), *id.Value())
+	})
+	t.Run("no value", func(t *testing.T) {
+		t.Parallel()
+		id := new(PostProviderID)
+		require.NoError(t, id.Set(""))
+		require.Nil(t, id.Value())
+	})
+	t.Run("not a number", func(t *testing.T) {
+		t.Parallel()
+		id := new(PostProviderID)
+		require.Error(t, id.Set("asdf"))
+		require.Nil(t, id.Value())
+	})
+	// TODO(mafa): re-enable test, see https://github.com/spacemeshos/go-spacemesh/issues/4801
+	// t.Run("negative", func(t *testing.T) {
+	// 	t.Parallel()
+	// 	id := new(PostProviderID)
+	// 	require.Error(t, id.Set("-1"))
+	// 	require.Nil(t, id.Value())
+	// })
 }

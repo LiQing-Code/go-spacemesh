@@ -8,10 +8,8 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	pb "github.com/spacemeshos/api/release/go/spacemesh/v1"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -37,17 +35,8 @@ type MeshService struct {
 }
 
 // RegisterService registers this service with a grpc server instance.
-func (s MeshService) RegisterService(server *grpc.Server) {
-	pb.RegisterMeshServiceServer(server, s)
-}
-
-func (s MeshService) RegisterHandlerService(mux *runtime.ServeMux) error {
-	return pb.RegisterMeshServiceHandlerServer(context.Background(), mux, s)
-}
-
-// String returns the name of this service.
-func (s MeshService) String() string {
-	return "MeshService"
+func (s MeshService) RegisterService(server *Server) {
+	pb.RegisterMeshServiceServer(server.GrpcServer, s)
 }
 
 // NewMeshService creates a new service using config data.
@@ -117,10 +106,7 @@ func (s MeshService) LayerDuration(context.Context, *pb.LayerDurationRequest) (*
 }
 
 // MaxTransactionsPerSecond returns the max number of tx per sec (a network parameter).
-func (s MeshService) MaxTransactionsPerSecond(
-	context.Context,
-	*pb.MaxTransactionsPerSecondRequest,
-) (*pb.MaxTransactionsPerSecondResponse, error) {
+func (s MeshService) MaxTransactionsPerSecond(context.Context, *pb.MaxTransactionsPerSecondRequest) (*pb.MaxTransactionsPerSecondResponse, error) {
 	return &pb.MaxTransactionsPerSecondResponse{MaxTxsPerSecond: &pb.SimpleInt{
 		Value: uint64(s.txsPerProposal * s.layerAvgSize / uint32(s.layerDuration.Seconds())),
 	}}, nil
@@ -128,10 +114,7 @@ func (s MeshService) MaxTransactionsPerSecond(
 
 // QUERIES
 
-func (s MeshService) getFilteredTransactions(
-	from types.LayerID,
-	address types.Address,
-) ([]*types.MeshTransaction, error) {
+func (s MeshService) getFilteredTransactions(from types.LayerID, address types.Address) ([]*types.MeshTransaction, error) {
 	latest := s.mesh.LatestLayer()
 	txs, err := s.conState.GetTransactionsByAddress(from, latest, address)
 	if err != nil {
@@ -140,11 +123,7 @@ func (s MeshService) getFilteredTransactions(
 	return txs, nil
 }
 
-func (s MeshService) getFilteredActivations(
-	ctx context.Context,
-	startLayer types.LayerID,
-	addr types.Address,
-) (activations []*types.VerifiedActivationTx, err error) {
+func (s MeshService) getFilteredActivations(ctx context.Context, startLayer types.LayerID, addr types.Address) (activations []*types.VerifiedActivationTx, err error) {
 	// We have no way to look up activations by coinbase so we have no choice but to read all of them.
 	var atxids []types.ATXID
 	for l := startLayer; !l.After(s.mesh.LatestLayer()); l = l.Add(1) {
@@ -156,12 +135,7 @@ func (s MeshService) getFilteredActivations(
 			if b.EpochData != nil {
 				actives, err := activesets.Get(s.cdb, b.EpochData.ActiveSetHash)
 				if err != nil {
-					return nil, status.Errorf(
-						codes.Internal,
-						"error retrieving active set %s (%s)",
-						b.ID().String(),
-						b.EpochData.ActiveSetHash.ShortString(),
-					)
+					return nil, status.Errorf(codes.Internal, "error retrieving active set %s (%s)", b.ID().String(), b.EpochData.ActiveSetHash.ShortString())
 				}
 				atxids = append(atxids, actives.Set...)
 			}
@@ -184,10 +158,7 @@ func (s MeshService) getFilteredActivations(
 }
 
 // AccountMeshDataQuery returns account data.
-func (s MeshService) AccountMeshDataQuery(
-	ctx context.Context,
-	in *pb.AccountMeshDataQueryRequest,
-) (*pb.AccountMeshDataQueryResponse, error) {
+func (s MeshService) AccountMeshDataQuery(ctx context.Context, in *pb.AccountMeshDataQueryRequest) (*pb.AccountMeshDataQueryResponse, error) {
 	var startLayer types.LayerID
 	if in.MinLayer != nil {
 		startLayer = types.LayerID(in.MinLayer.Number)
@@ -208,9 +179,7 @@ func (s MeshService) AccountMeshDataQuery(
 
 	// Read the filter flags
 	filterTx := in.Filter.AccountMeshDataFlags&uint32(pb.AccountMeshDataFlag_ACCOUNT_MESH_DATA_FLAG_TRANSACTIONS) != 0
-	filterActivations := in.Filter.AccountMeshDataFlags&uint32(
-		pb.AccountMeshDataFlag_ACCOUNT_MESH_DATA_FLAG_ACTIVATIONS,
-	) != 0
+	filterActivations := in.Filter.AccountMeshDataFlags&uint32(pb.AccountMeshDataFlag_ACCOUNT_MESH_DATA_FLAG_ACTIVATIONS) != 0
 
 	// Gather transaction data
 	addr, err := types.StringToAddress(in.Filter.AccountId.Address)
@@ -324,11 +293,7 @@ func convertActivation(a *types.VerifiedActivationTx) *pb.Activation {
 	}
 }
 
-func (s MeshService) readLayer(
-	ctx context.Context,
-	layerID types.LayerID,
-	layerStatus pb.Layer_LayerStatus,
-) (*pb.Layer, error) {
+func (s MeshService) readLayer(ctx context.Context, layerID types.LayerID, layerStatus pb.Layer_LayerStatus) (*pb.Layer, error) {
 	// Load all block data
 	var blocks []*pb.Block
 
@@ -374,17 +339,10 @@ func (s MeshService) readLayer(
 	for _, b := range layer.Ballots() {
 		if b.EpochData != nil {
 			actives, err := activesets.Get(s.cdb, b.EpochData.ActiveSetHash)
-			if err != nil && !errors.Is(err, sql.ErrNotFound) {
-				return nil, status.Errorf(
-					codes.Internal,
-					"error retrieving active set %s (%s)",
-					b.ID().String(),
-					b.EpochData.ActiveSetHash.ShortString(),
-				)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "error retrieving active set %s (%s)", b.ID().String(), b.EpochData.ActiveSetHash.ShortString())
 			}
-			if actives != nil {
-				activations = append(activations, actives.Set...)
-			}
+			activations = append(activations, actives.Set...)
 		}
 	}
 
@@ -482,10 +440,7 @@ func (s MeshService) LayersQuery(ctx context.Context, in *pb.LayersQueryRequest)
 // STREAMS
 
 // AccountMeshDataStream exposes a stream of transactions and activations for an account.
-func (s MeshService) AccountMeshDataStream(
-	in *pb.AccountMeshDataStreamRequest,
-	stream pb.MeshService_AccountMeshDataStreamServer,
-) error {
+func (s MeshService) AccountMeshDataStream(in *pb.AccountMeshDataStreamRequest, stream pb.MeshService_AccountMeshDataStreamServer) error {
 	if in.Filter == nil {
 		return status.Errorf(codes.InvalidArgument, "`Filter` must be provided")
 	}
@@ -502,9 +457,7 @@ func (s MeshService) AccountMeshDataStream(
 
 	// Read the filter flags
 	filterTx := in.Filter.AccountMeshDataFlags&uint32(pb.AccountMeshDataFlag_ACCOUNT_MESH_DATA_FLAG_TRANSACTIONS) != 0
-	filterActivations := in.Filter.AccountMeshDataFlags&uint32(
-		pb.AccountMeshDataFlag_ACCOUNT_MESH_DATA_FLAG_ACTIVATIONS,
-	) != 0
+	filterActivations := in.Filter.AccountMeshDataFlags&uint32(pb.AccountMeshDataFlag_ACCOUNT_MESH_DATA_FLAG_ACTIVATIONS) != 0
 
 	// Subscribe to the stream of transactions and activations
 	var (
@@ -520,10 +473,7 @@ func (s MeshService) AccountMeshDataStream(
 	}
 	if filterActivations {
 		if activationsSubscription := events.SubscribeActivations(); activationsSubscription != nil {
-			activationsCh, activationsBufFull = consumeEvents[events.ActivationTx](
-				stream.Context(),
-				activationsSubscription,
-			)
+			activationsCh, activationsBufFull = consumeEvents[events.ActivationTx](stream.Context(), activationsSubscription)
 		}
 	}
 
@@ -659,10 +609,7 @@ func (s MeshService) EpochStream(req *pb.EpochStreamRequest, stream pb.MeshServi
 	return nil
 }
 
-func (s MeshService) MalfeasanceQuery(
-	ctx context.Context,
-	req *pb.MalfeasanceRequest,
-) (*pb.MalfeasanceResponse, error) {
+func (s MeshService) MalfeasanceQuery(ctx context.Context, req *pb.MalfeasanceRequest) (*pb.MalfeasanceResponse, error) {
 	parsed, err := hex.DecodeString(req.SmesherHex)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -681,10 +628,7 @@ func (s MeshService) MalfeasanceQuery(
 	}, nil
 }
 
-func (s MeshService) MalfeasanceStream(
-	req *pb.MalfeasanceStreamRequest,
-	stream pb.MeshService_MalfeasanceStreamServer,
-) error {
+func (s MeshService) MalfeasanceStream(req *pb.MalfeasanceStreamRequest, stream pb.MeshService_MalfeasanceStreamServer) error {
 	sub := events.SubscribeMalfeasance()
 	if sub == nil {
 		return status.Errorf(codes.FailedPrecondition, "event reporting is not enabled")

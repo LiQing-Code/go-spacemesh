@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -65,12 +64,11 @@ func NewTestNetwork(t *testing.T, conf config.Config, l log.Log, size int) []*Te
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		conn, err := grpc.DialContext(ctx, app.grpcPublicServer.BoundAddress,
+		conn, err := grpc.DialContext(ctx, app.grpcPublicService.BoundAddress,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithBlock(),
 		)
 		require.NoError(t, err)
-		t.Cleanup(func() { assert.NoError(t, conn.Close()) })
 		apps = append(apps, &TestApp{app, conn})
 	}
 
@@ -88,7 +86,6 @@ func NewTestNetwork(t *testing.T, conf config.Config, l log.Log, size int) []*Te
 		defer cancel()
 		for _, a := range apps {
 			a.Cleanup(ctx)
-			a.eg.Wait()
 		}
 	})
 

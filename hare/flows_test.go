@@ -128,16 +128,11 @@ type hareWithMocks struct {
 	mockCoin    *mocks.MockweakCoin
 }
 
-func createTestHare(
-	tb testing.TB,
-	msh mesh,
-	tcfg config.Config,
-	clock *mockClock,
-	p2p pubsub.PublishSubsciber,
-	name string,
-) *hareWithMocks {
+func createTestHare(tb testing.TB, msh mesh, tcfg config.Config, clock *mockClock, p2p pubsub.PublishSubsciber, name string) *hareWithMocks {
 	tb.Helper()
 	signer, err := signing.NewEdSigner()
+	require.NoError(tb, err)
+	edVerifier, err := signing.NewEdVerifier()
 	require.NoError(tb, err)
 
 	ctrl := gomock.NewController(tb)
@@ -146,10 +141,7 @@ func createTestHare(
 	mockBeacons := smocks.NewMockBeaconGetter(ctrl)
 	mockBeacons.EXPECT().GetBeacon(gomock.Any()).Return(types.EmptyBeacon, nil).AnyTimes()
 	mockStateQ := mocks.NewMockstateQuerier(ctrl)
-	mockStateQ.EXPECT().
-		IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(true, nil).
-		AnyTimes()
+	mockStateQ.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	mockSyncS := smocks.NewMockSyncStateProvider(ctrl)
 	mockSyncS.EXPECT().IsSynced(gomock.Any()).Return(true).AnyTimes()
 	mockSyncS.EXPECT().IsBeaconSynced(gomock.Any()).Return(true).AnyTimes()
@@ -161,7 +153,7 @@ func createTestHare(
 		tcfg,
 		p2p,
 		signer,
-		signing.NewEdVerifier(),
+		edVerifier,
 		signer.NodeID(),
 		make(chan LayerOutput, 100),
 		mockSyncS,
@@ -253,15 +245,7 @@ func Test_multipleCPs(t *testing.T) {
 	test := newHareWrapper(totalCp)
 	totalNodes := 10
 	networkDelay := time.Second * 4
-	cfg := config.Config{
-		N:               totalNodes,
-		WakeupDelta:     networkDelay,
-		RoundDuration:   networkDelay,
-		ExpectedLeaders: 5,
-		LimitIterations: 1000,
-		LimitConcurrent: 100,
-		Hdist:           20,
-	}
+	cfg := config.Config{N: totalNodes, WakeupDelta: networkDelay, RoundDuration: networkDelay, ExpectedLeaders: 5, LimitIterations: 1000, LimitConcurrent: 100, Hdist: 20}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -281,18 +265,12 @@ func Test_multipleCPs(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(ctx, t)
 	for i := 0; i < totalNodes; i++ {
 		mockMesh := mocks.NewMockmesh(ctrl)
-		mockMesh.EXPECT().
-			GetEpochAtx(gomock.Any(), gomock.Any()).
-			Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).
-			AnyTimes()
+		mockMesh.EXPECT().GetEpochAtx(gomock.Any(), gomock.Any()).Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).AnyTimes()
 		mockMesh.EXPECT().GetMalfeasanceProof(gomock.Any()).AnyTimes()
 		for lid := types.GetEffectiveGenesis().Add(1); !lid.After(finalLyr); lid = lid.Add(1) {
 			mockMesh.EXPECT().Proposals(lid).Return(pList[lid], nil)
 			for _, p := range pList[lid] {
-				mockMesh.EXPECT().
-					GetAtxHeader(p.AtxID).
-					Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).
-					AnyTimes()
+				mockMesh.EXPECT().GetAtxHeader(p.AtxID).Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).AnyTimes()
 				mockMesh.EXPECT().Ballot(p.Ballot.ID()).Return(&p.Ballot, nil).AnyTimes()
 			}
 		}
@@ -309,22 +287,10 @@ func Test_multipleCPs(t *testing.T) {
 		require.NoError(t, err)
 		pubsubs = append(pubsubs, ps)
 		h := createTestHare(t, meshes[i], cfg, test.clock, ps, t.Name())
-		h.mockRoracle.EXPECT().
-			IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(true, nil).
-			AnyTimes()
-		h.mockRoracle.EXPECT().
-			Proof(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(types.EmptyVrfSignature, nil).
-			AnyTimes()
-		h.mockRoracle.EXPECT().
-			CalcEligibility(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(uint16(1), nil).
-			AnyTimes()
-		h.mockRoracle.EXPECT().
-			Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(true, nil).
-			AnyTimes()
+		h.mockRoracle.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+		h.mockRoracle.EXPECT().Proof(gomock.Any(), gomock.Any(), gomock.Any()).Return(types.EmptyVrfSignature, nil).AnyTimes()
+		h.mockRoracle.EXPECT().CalcEligibility(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(uint16(1), nil).AnyTimes()
+		h.mockRoracle.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 		h.mockCoin.EXPECT().Set(gomock.Any(), gomock.Any()).AnyTimes()
 		outputsWaitGroup.Add(1)
 		go func(idx int) {
@@ -396,15 +362,7 @@ func Test_multipleCPsAndIterations(t *testing.T) {
 	test := newHareWrapper(totalCp)
 	totalNodes := 10
 	networkDelay := time.Second * 4
-	cfg := config.Config{
-		N:               totalNodes,
-		WakeupDelta:     networkDelay,
-		RoundDuration:   networkDelay,
-		ExpectedLeaders: 5,
-		LimitIterations: 1000,
-		LimitConcurrent: 100,
-		Hdist:           20,
-	}
+	cfg := config.Config{N: totalNodes, WakeupDelta: networkDelay, RoundDuration: networkDelay, ExpectedLeaders: 5, LimitIterations: 1000, LimitConcurrent: 100, Hdist: 20}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -425,18 +383,12 @@ func Test_multipleCPsAndIterations(t *testing.T) {
 	ctrl, ctx := gomock.WithContext(ctx, t)
 	for i := 0; i < totalNodes; i++ {
 		mockMesh := mocks.NewMockmesh(ctrl)
-		mockMesh.EXPECT().
-			GetEpochAtx(gomock.Any(), gomock.Any()).
-			Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).
-			AnyTimes()
+		mockMesh.EXPECT().GetEpochAtx(gomock.Any(), gomock.Any()).Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).AnyTimes()
 		mockMesh.EXPECT().GetMalfeasanceProof(gomock.Any()).AnyTimes()
 		for lid := types.GetEffectiveGenesis().Add(1); !lid.After(finalLyr); lid = lid.Add(1) {
 			mockMesh.EXPECT().Proposals(lid).Return(pList[lid], nil)
 			for _, p := range pList[lid] {
-				mockMesh.EXPECT().
-					GetAtxHeader(p.AtxID).
-					Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).
-					AnyTimes()
+				mockMesh.EXPECT().GetAtxHeader(p.AtxID).Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil).AnyTimes()
 				mockMesh.EXPECT().Ballot(p.Ballot.ID()).Return(&p.Ballot, nil).AnyTimes()
 			}
 		}
@@ -454,22 +406,10 @@ func Test_multipleCPsAndIterations(t *testing.T) {
 		pubsubs = append(pubsubs, ps)
 		mp2p := &p2pManipulator{nd: ps, stalledLayer: types.GetEffectiveGenesis().Add(1), err: errors.New("fake err")}
 		h := createTestHare(t, meshes[i], cfg, test.clock, mp2p, t.Name())
-		h.mockRoracle.EXPECT().
-			IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(true, nil).
-			AnyTimes()
-		h.mockRoracle.EXPECT().
-			Proof(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(types.EmptyVrfSignature, nil).
-			AnyTimes()
-		h.mockRoracle.EXPECT().
-			CalcEligibility(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(uint16(1), nil).
-			AnyTimes()
-		h.mockRoracle.EXPECT().
-			Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(true, nil).
-			AnyTimes()
+		h.mockRoracle.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+		h.mockRoracle.EXPECT().Proof(gomock.Any(), gomock.Any(), gomock.Any()).Return(types.EmptyVrfSignature, nil).AnyTimes()
+		h.mockRoracle.EXPECT().CalcEligibility(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(uint16(1), nil).AnyTimes()
+		h.mockRoracle.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 		h.mockCoin.EXPECT().Set(gomock.Any(), gomock.Any()).AnyTimes()
 		outputsWaitGroup.Add(1)
 		go func(idx int) {

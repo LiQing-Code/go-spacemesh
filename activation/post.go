@@ -2,18 +2,21 @@ package activation
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/spacemeshos/post/config"
 	"github.com/spacemeshos/post/initialization"
-	"go.uber.org/zap"
+	"github.com/spacemeshos/post/proving"
 
 	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/datastore"
 	"github.com/spacemeshos/go-spacemesh/events"
+	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/metrics/public"
 	"github.com/spacemeshos/go-spacemesh/sql"
 	"github.com/spacemeshos/go-spacemesh/sql/atxs"
@@ -45,6 +48,35 @@ func (c PostConfig) ToConfig() config.Config {
 	}
 }
 
+type PowDifficulty [32]byte
+
+func (d PowDifficulty) String() string {
+	return fmt.Sprintf("%X", d[:])
+}
+
+// Set implements pflag.Value.Set.
+func (f *PowDifficulty) Set(value string) error {
+	return f.UnmarshalText([]byte(value))
+}
+
+// Type implements pflag.Value.Type.
+func (PowDifficulty) Type() string {
+	return "PowDifficulty"
+}
+
+func (d *PowDifficulty) UnmarshalText(text []byte) error {
+	decodedLen := hex.DecodedLen(len(text))
+	if decodedLen != 32 {
+		return fmt.Errorf("expected 32 bytes, got %d", decodedLen)
+	}
+	var dst [32]byte
+	if _, err := hex.Decode(dst[:], text); err != nil {
+		return err
+	}
+	*d = PowDifficulty(dst)
+	return nil
+}
+
 // PostSetupOpts are the options used to initiate a Post setup data creation session,
 // either via the public smesher API, or on node launch (via cmd args).
 type PostSetupOpts struct {
@@ -57,23 +89,65 @@ type PostSetupOpts struct {
 	ComputeBatchSize uint64              `mapstructure:"smeshing-opts-compute-batch-size"`
 }
 
+type PostProviderID struct {
+	value *int64
+}
+
+// String implements pflag.Value.String.
+func (id *PostProviderID) String() string {
+	if id.value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", *id.value)
+}
+
+// Type implements pflag.Value.Type.
+func (PostProviderID) Type() string {
+	return "PostProviderID"
+}
+
+// Set implements pflag.Value.Set.
+func (id *PostProviderID) Set(value string) error {
+	if len(value) == 0 {
+		id.value = nil
+		return nil
+	}
+
+	i, err := strconv.ParseInt(value, 10, 33)
+	if err != nil {
+		return fmt.Errorf("failed to parse PoST Provider ID (\"%s\"): %w", value, err)
+	}
+
+	id.value = new(int64)
+	*id.value = int64(i)
+	return nil
+}
+
+// SetInt64 sets the value of the PostProviderID to the given int64.
+func (id *PostProviderID) SetInt64(value int64) {
+	id.value = &value
+}
+
+// Value returns the value of the PostProviderID as a pointer to uint32.
+func (id *PostProviderID) Value() *int64 {
+	return id.value
+}
+
 // PostProvingOpts are the options controlling POST proving process.
 type PostProvingOpts struct {
 	// Number of threads used in POST proving process.
 	Threads uint `mapstructure:"smeshing-opts-proving-threads"`
-
 	// Number of nonces tried in parallel in POST proving process.
 	Nonces uint `mapstructure:"smeshing-opts-proving-nonces"`
-
-	// RandomXMode is the mode used for RandomX computations.
-	RandomXMode PostRandomXMode `mapstructure:"smeshing-opts-proving-randomx-mode"`
+	// Flags used in the PoW computation.
+	Flags config.PowFlags `mapstructure:"smeshing-opts-proving-powflags"`
 }
 
 func DefaultPostProvingOpts() PostProvingOpts {
 	return PostProvingOpts{
-		Threads:     1,
-		Nonces:      16,
-		RandomXMode: PostRandomXModeFast,
+		Threads: 1,
+		Nonces:  16,
+		Flags:   config.DefaultProvingPowFlags(),
 	}
 }
 
@@ -82,7 +156,7 @@ type PostProofVerifyingOpts struct {
 	// Number of workers spawned to verify proofs.
 	Workers int `mapstructure:"smeshing-opts-verifying-workers"`
 	// Flags used for the PoW verification.
-	Flags PostPowFlags `mapstructure:"smeshing-opts-verifying-powflags"`
+	Flags config.PowFlags `mapstructure:"smeshing-opts-verifying-powflags"`
 }
 
 func DefaultPostVerifyingOpts() PostProofVerifyingOpts {
@@ -92,7 +166,7 @@ func DefaultPostVerifyingOpts() PostProofVerifyingOpts {
 	}
 	return PostProofVerifyingOpts{
 		Workers: workers,
-		Flags:   PostPowFlags(config.DefaultVerifyingPowFlags()),
+		Flags:   config.DefaultVerifyingPowFlags(),
 	}
 }
 
@@ -112,6 +186,11 @@ const (
 	PostSetupStateStopped
 	PostSetupStateComplete
 	PostSetupStateError
+)
+
+var (
+	errNotComplete = errors.New("not complete")
+	errNotStarted  = errors.New("not started")
 )
 
 // DefaultPostConfig defines the default configuration for Post.
@@ -165,24 +244,19 @@ type PostSetupManager struct {
 	commitmentAtxId types.ATXID
 
 	cfg         PostConfig
-	logger      *zap.Logger
+	logger      log.Log
 	db          *datastore.CachedDB
 	goldenATXID types.ATXID
 
-	mu       sync.Mutex                  // mu protects setting the values below.
-	lastOpts *PostSetupOpts              // the last options used to initiate a Post setup session.
-	state    PostSetupState              // state is the current state of the Post setup.
-	init     *initialization.Initializer // init is the current initializer instance.
+	mu          sync.Mutex                  // mu protects setting the values below.
+	lastOpts    *PostSetupOpts              // the last options used to initiate a Post setup session.
+	state       PostSetupState              // state is the current state of the Post setup.
+	init        *initialization.Initializer // init is the current initializer instance.
+	provingOpts PostProvingOpts
 }
 
 // NewPostSetupManager creates a new instance of PostSetupManager.
-func NewPostSetupManager(
-	id types.NodeID,
-	cfg PostConfig,
-	logger *zap.Logger,
-	db *datastore.CachedDB,
-	goldenATXID types.ATXID,
-) (*PostSetupManager, error) {
+func NewPostSetupManager(id types.NodeID, cfg PostConfig, logger log.Log, db *datastore.CachedDB, goldenATXID types.ATXID, provingOpts PostProvingOpts) (*PostSetupManager, error) {
 	mgr := &PostSetupManager{
 		id:          id,
 		cfg:         cfg,
@@ -190,6 +264,7 @@ func NewPostSetupManager(
 		db:          db,
 		goldenATXID: goldenATXID,
 		state:       PostSetupStateNotStarted,
+		provingOpts: provingOpts,
 	}
 
 	return mgr, nil
@@ -218,6 +293,53 @@ func (mgr *PostSetupManager) Status() *PostSetupStatus {
 	}
 }
 
+// Providers returns a list of available compute providers for Post setup.
+func (*PostSetupManager) Providers() ([]PostSetupProvider, error) {
+	providers, err := initialization.OpenCLProviders()
+	if err != nil {
+		return nil, err
+	}
+
+	providersAlias := make([]PostSetupProvider, len(providers))
+	for i, p := range providers {
+		providersAlias[i] = PostSetupProvider(p)
+	}
+
+	return providersAlias, nil
+}
+
+// BestProvider returns the most performant compute provider based on a short benchmarking session.
+func (mgr *PostSetupManager) BestProvider() (*PostSetupProvider, error) {
+	providers, err := mgr.Providers()
+	if err != nil {
+		return nil, fmt.Errorf("fetch best provider: %w", err)
+	}
+
+	var bestProvider PostSetupProvider
+	var maxHS int
+	for _, p := range providers {
+		hs, err := mgr.Benchmark(p)
+		if err != nil {
+			return nil, err
+		}
+		if hs > maxHS {
+			maxHS = hs
+			bestProvider = p
+		}
+	}
+	return &bestProvider, nil
+}
+
+// Benchmark runs a short benchmarking session for a given provider to evaluate its performance.
+func (mgr *PostSetupManager) Benchmark(p PostSetupProvider) (int, error) {
+	score, err := initialization.Benchmark(initialization.Provider(p))
+	if err != nil {
+		return score, fmt.Errorf("benchmark GPU: %w", err)
+	}
+
+	return score, nil
+}
+
 // StartSession starts (or continues) a PoST session. It supports resuming a
 // previously started session, and will return an error if a session is already
 // in progress. It must be ensured that PrepareInitializer is called once
@@ -236,13 +358,13 @@ func (mgr *PostSetupManager) StartSession(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	mgr.logger.Info("post setup session starting",
-		zap.Stringer("node_id", mgr.id),
-		zap.Stringer("commitment_atx", mgr.commitmentAtxId),
-		zap.String("data_dir", mgr.lastOpts.DataDir),
-		zap.Uint32("num_units", mgr.lastOpts.NumUnits),
-		zap.Uint64("labels_per_unit", mgr.cfg.LabelsPerUnit),
-		zap.Stringer("provider", mgr.lastOpts.ProviderID),
+	mgr.logger.With().Info("post setup session starting",
+		log.String("node_id", mgr.id.String()),
+		log.String("commitment_atx", mgr.commitmentAtxId.String()),
+		log.String("data_dir", mgr.lastOpts.DataDir),
+		log.String("num_units", fmt.Sprintf("%d", mgr.lastOpts.NumUnits)),
+		log.String("labels_per_unit", fmt.Sprintf("%d", mgr.cfg.LabelsPerUnit)),
+		log.String("provider", fmt.Sprintf("%d", mgr.lastOpts.ProviderID)),
 	)
 	public.InitStart.Set(float64(mgr.lastOpts.NumUnits))
 	events.EmitInitStart(mgr.id, mgr.commitmentAtxId)
@@ -257,15 +379,12 @@ func (mgr *PostSetupManager) StartSession(ctx context.Context) error {
 		mgr.state = PostSetupStateStopped
 		return err
 	case errors.As(err, &errLabelMismatch):
-		mgr.logger.Error(
-			"post setup session failed due to an issue with the initialization provider",
-			zap.Error(errLabelMismatch),
-		)
+		mgr.logger.With().Error("post setup session failed due to an issue with the initialization provider", log.Err(errLabelMismatch))
 		mgr.state = PostSetupStateError
 		events.EmitInitFailure(mgr.id, mgr.commitmentAtxId, errLabelMismatch)
 		return nil
 	case err != nil:
-		mgr.logger.Error("post setup session failed", zap.Error(err))
+		mgr.logger.With().Error("post setup session failed", log.Err(err))
 		mgr.state = PostSetupStateError
 		events.EmitInitFailure(mgr.id, mgr.commitmentAtxId, err)
 		return err
@@ -273,13 +392,13 @@ func (mgr *PostSetupManager) StartSession(ctx context.Context) error {
 	public.InitEnd.Set(float64(mgr.lastOpts.NumUnits))
 	events.EmitInitComplete()
 
-	mgr.logger.Info("post setup completed",
-		zap.Stringer("node_id", mgr.id),
-		zap.Stringer("commitment_atx", mgr.commitmentAtxId),
-		zap.String("data_dir", mgr.lastOpts.DataDir),
-		zap.Uint32("num_units", mgr.lastOpts.NumUnits),
-		zap.Uint64("labels_per_unit", mgr.cfg.LabelsPerUnit),
-		zap.Stringer("provider", mgr.lastOpts.ProviderID),
+	mgr.logger.With().Info("post setup completed",
+		log.String("node_id", mgr.id.String()),
+		log.String("commitment_atx", mgr.commitmentAtxId.String()),
+		log.String("data_dir", mgr.lastOpts.DataDir),
+		log.String("num_units", fmt.Sprintf("%d", mgr.lastOpts.NumUnits)),
+		log.String("labels_per_unit", fmt.Sprintf("%d", mgr.cfg.LabelsPerUnit)),
+		log.String("provider", fmt.Sprintf("%d", mgr.lastOpts.ProviderID)),
 	)
 	mgr.state = PostSetupStateComplete
 	return nil
@@ -292,15 +411,29 @@ func (mgr *PostSetupManager) StartSession(ctx context.Context) error {
 // (StartSession can take days to complete). After the first call to this
 // method subsequent calls to this method will return an error until
 // StartSession has completed execution.
-func (mgr *PostSetupManager) PrepareInitializer(opts PostSetupOpts) error {
+func (mgr *PostSetupManager) PrepareInitializer(ctx context.Context, opts PostSetupOpts) error {
 	mgr.mu.Lock()
 	defer mgr.mu.Unlock()
 	if mgr.state == PostSetupStatePrepared || mgr.state == PostSetupStateInProgress {
 		return fmt.Errorf("post setup session in progress")
 	}
 
+	// TODO(mafa): remove this, see https://github.com/spacemeshos/go-spacemesh/issues/4801
+	if opts.ProviderID.Value() != nil && *opts.ProviderID.Value() == -1 {
+		mgr.logger.Warning("DEPRECATED: auto-determining compute provider is deprecated, please specify a valid provider ID in the config file")
+
+		p, err := mgr.BestProvider()
+		if err != nil {
+			return err
+		}
+
+		mgr.logger.Warning("DEPRECATED: found best compute provider: id: %d, model: %v, device type: %v", p.ID, p.Model, p.DeviceType)
+		mgr.logger.Warning("DEPRECATED: please update your config file: {\"smeshing\": {\"smeshing-opts\": {\"smeshing-opts-provider\": %d }}}", p.ID)
+		opts.ProviderID.SetInt64(int64(p.ID))
+	}
+
 	var err error
-	mgr.commitmentAtxId, err = mgr.commitmentAtx(opts.DataDir)
+	mgr.commitmentAtxId, err = mgr.commitmentAtx(ctx, opts.DataDir)
 	if err != nil {
 		return err
 	}
@@ -310,7 +443,7 @@ func (mgr *PostSetupManager) PrepareInitializer(opts PostSetupOpts) error {
 		initialization.WithCommitmentAtxId(mgr.commitmentAtxId.Bytes()),
 		initialization.WithConfig(mgr.cfg.ToConfig()),
 		initialization.WithInitOpts(opts.ToInitOpts()),
-		initialization.WithLogger(mgr.logger),
+		initialization.WithLogger(mgr.logger.Zap()),
 	)
 	if err != nil {
 		mgr.state = PostSetupStateError
@@ -323,7 +456,17 @@ func (mgr *PostSetupManager) PrepareInitializer(opts PostSetupOpts) error {
 	return nil
 }
 
-func (mgr *PostSetupManager) commitmentAtx(dataDir string) (types.ATXID, error) {
+func (mgr *PostSetupManager) CommitmentAtx() (types.ATXID, error) {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	if mgr.commitmentAtxId != types.EmptyATXID {
+		return mgr.commitmentAtxId, nil
+	}
+	return types.EmptyATXID, errNotStarted
+}
+
+func (mgr *PostSetupManager) commitmentAtx(ctx context.Context, dataDir string) (types.ATXID, error) {
 	m, err := initialization.LoadMetadata(dataDir)
 	switch {
 	case err == nil:
@@ -343,7 +486,7 @@ func (mgr *PostSetupManager) commitmentAtx(dataDir string) (types.ATXID, error) 
 		}
 
 		// if this node has not published an ATX select the best ATX with `findCommitmentAtx`
-		return mgr.findCommitmentAtx()
+		return mgr.findCommitmentAtx(ctx)
 	default:
 		return types.EmptyATXID, fmt.Errorf("load metadata: %w", err)
 	}
@@ -352,11 +495,11 @@ func (mgr *PostSetupManager) commitmentAtx(dataDir string) (types.ATXID, error) 
 // findCommitmentAtx determines the best commitment ATX to use for the node.
 // It will use the ATX with the highest height seen by the node and defaults to the goldenATX,
 // when no ATXs have yet been published.
-func (mgr *PostSetupManager) findCommitmentAtx() (types.ATXID, error) {
+func (mgr *PostSetupManager) findCommitmentAtx(ctx context.Context) (types.ATXID, error) {
 	atx, err := atxs.GetIDWithMaxHeight(mgr.db, types.EmptyNodeID)
 	switch {
 	case errors.Is(err, sql.ErrNotFound):
-		mgr.logger.Info("using golden atx as commitment atx")
+		mgr.logger.With().Info("using golden atx as commitment atx")
 		return mgr.goldenATXID, nil
 	case err != nil:
 		return types.EmptyATXID, fmt.Errorf("get commitment atx: %w", err)
@@ -377,4 +520,63 @@ func (mgr *PostSetupManager) Reset() error {
 	// Reset internal state.
 	mgr.state = PostSetupStateNotStarted
 	return nil
+}
+
+// GenerateProof generates a new Post.
+func (mgr *PostSetupManager) GenerateProof(ctx context.Context, challenge []byte, options ...proving.OptionFunc) (*types.Post, *types.PostMetadata, error) {
+	mgr.mu.Lock()
+
+	if mgr.state != PostSetupStateComplete {
+		mgr.mu.Unlock()
+		return nil, nil, errNotComplete
+	}
+	mgr.mu.Unlock()
+
+	opts := []proving.OptionFunc{
+		proving.WithDataSource(mgr.cfg.ToConfig(), mgr.id.Bytes(), mgr.commitmentAtxId.Bytes(), mgr.lastOpts.DataDir),
+		proving.WithNonces(mgr.provingOpts.Nonces),
+		proving.WithThreads(mgr.provingOpts.Threads),
+		proving.WithPowFlags(mgr.provingOpts.Flags),
+	}
+	opts = append(opts, options...)
+
+	proof, proofMetadata, err := proving.Generate(ctx, challenge, mgr.cfg.ToConfig(), mgr.logger.Zap(), opts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate proof: %w", err)
+	}
+
+	p := (*types.Post)(proof)
+	m := &types.PostMetadata{
+		Challenge:     proofMetadata.Challenge,
+		LabelsPerUnit: proofMetadata.LabelsPerUnit,
+	}
+	return p, m, nil
+}
+
+// VRFNonce returns the VRF nonce found during initialization.
+func (mgr *PostSetupManager) VRFNonce() (*types.VRFPostIndex, error) {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	if mgr.state != PostSetupStateComplete {
+		return nil, errNotComplete
+	}
+
+	return (*types.VRFPostIndex)(mgr.init.Nonce()), nil
+}
+
+// LastOpts returns the Post setup last session options.
+func (mgr *PostSetupManager) LastOpts() *PostSetupOpts {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	return mgr.lastOpts
+}
+
+// Config returns the Post protocol config.
+func (mgr *PostSetupManager) Config() PostConfig {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	return mgr.cfg
 }

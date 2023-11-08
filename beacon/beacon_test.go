@@ -17,7 +17,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/spacemeshos/go-spacemesh/activation"
-	"github.com/spacemeshos/go-spacemesh/beacon/weakcoin"
 	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/common/types/result"
 	"github.com/spacemeshos/go-spacemesh/datastore"
@@ -32,6 +31,10 @@ import (
 	"github.com/spacemeshos/go-spacemesh/system/mocks"
 )
 
+const (
+	numATXs = 10
+)
+
 func coinValueMock(tb testing.TB, value bool) coin {
 	ctrl := gomock.NewController(tb)
 	coinMock := NewMockcoin(ctrl)
@@ -40,9 +43,10 @@ func coinValueMock(tb testing.TB, value bool) coin {
 		gomock.AssignableToTypeOf(types.EpochID(0)),
 	).AnyTimes()
 	coinMock.EXPECT().FinishEpoch(gomock.Any(), gomock.AssignableToTypeOf(types.EpochID(0))).AnyTimes()
+	nonce := types.VRFPostIndex(0)
 	coinMock.EXPECT().StartRound(gomock.Any(),
 		gomock.AssignableToTypeOf(types.RoundID(0)),
-		gomock.AssignableToTypeOf([]weakcoin.Participant{}),
+		gomock.AssignableToTypeOf(&nonce),
 	).AnyTimes()
 	coinMock.EXPECT().FinishRound(gomock.Any()).AnyTimes()
 	coinMock.EXPECT().Get(
@@ -67,52 +71,49 @@ func newPublisher(tb testing.TB) pubsub.Publisher {
 
 type testProtocolDriver struct {
 	*ProtocolDriver
-	ctrl      *gomock.Controller
-	cdb       *datastore.CachedDB
-	mClock    *MocklayerClock
-	mSync     *mocks.MockSyncStateProvider
-	mVerifier *MockvrfVerifier
+	ctrl          *gomock.Controller
+	cdb           *datastore.CachedDB
+	mClock        *MocklayerClock
+	mSync         *mocks.MockSyncStateProvider
+	mVerifier     *MockvrfVerifier
+	mNonceFetcher *MocknonceFetcher
 }
 
 func setUpProtocolDriver(tb testing.TB) *testProtocolDriver {
-	return newTestDriver(tb, UnitTestConfig(), newPublisher(tb), 3, "")
+	return newTestDriver(tb, UnitTestConfig(), newPublisher(tb))
 }
 
-func newTestDriver(tb testing.TB, cfg Config, p pubsub.Publisher, miners int, id string) *testProtocolDriver {
+func newTestDriver(tb testing.TB, cfg Config, p pubsub.Publisher) *testProtocolDriver {
 	ctrl := gomock.NewController(tb)
 	tpd := &testProtocolDriver{
-		ctrl:      ctrl,
-		mClock:    NewMocklayerClock(ctrl),
-		mSync:     mocks.NewMockSyncStateProvider(ctrl),
-		mVerifier: NewMockvrfVerifier(ctrl),
+		ctrl:          ctrl,
+		mClock:        NewMocklayerClock(ctrl),
+		mSync:         mocks.NewMockSyncStateProvider(ctrl),
+		mVerifier:     NewMockvrfVerifier(ctrl),
+		mNonceFetcher: NewMocknonceFetcher(ctrl),
 	}
-	lg := logtest.New(tb).Named(id)
+	edSgn, err := signing.NewEdSigner()
+	require.NoError(tb, err)
+	edVerify, err := signing.NewEdVerifier()
+	require.NoError(tb, err)
+	minerID := edSgn.NodeID()
+	lg := logtest.New(tb).WithName(minerID.ShortString())
 
 	tpd.mVerifier.EXPECT().Verify(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(true)
+	tpd.mNonceFetcher.EXPECT().VRFNonce(gomock.Any(), gomock.Any()).AnyTimes().Return(types.VRFPostIndex(1), nil)
 
 	tpd.cdb = datastore.NewCachedDB(sql.InMemory(), lg)
-	tpd.ProtocolDriver = New(p, signing.NewEdVerifier(), tpd.mVerifier, tpd.cdb, tpd.mClock,
+	tpd.ProtocolDriver = New(p, edSgn, edVerify, tpd.mVerifier, tpd.cdb, tpd.mClock,
 		WithConfig(cfg),
 		WithLogger(lg),
 		withWeakCoin(coinValueMock(tb, true)),
+		withNonceFetcher(tpd.mNonceFetcher),
 	)
 	tpd.ProtocolDriver.SetSyncState(tpd.mSync)
-	for i := 0; i < miners; i++ {
-		edSgn, err := signing.NewEdSigner()
-		require.NoError(tb, err)
-		tpd.ProtocolDriver.Register(edSgn)
-	}
 	return tpd
 }
 
-func createATX(
-	tb testing.TB,
-	db *datastore.CachedDB,
-	lid types.LayerID,
-	sig *signing.EdSigner,
-	numUnits uint32,
-	received time.Time,
-) types.ATXID {
+func createATX(tb testing.TB, db *datastore.CachedDB, lid types.LayerID, sig *signing.EdSigner, numUnits uint32, received time.Time) types.ATXID {
 	nonce := types.VRFPostIndex(1)
 	atx := types.NewActivationTx(
 		types.NIPostChallenge{PublishEpoch: lid.GetEpoch()},
@@ -150,20 +151,18 @@ func TestMain(m *testing.M) {
 
 func TestBeacon_MultipleNodes(t *testing.T) {
 	numNodes := 5
-	numMinersPerNode := 7
 	testNodes := make([]*testProtocolDriver, 0, numNodes)
 	publisher := pubsubmocks.NewMockPublisher(gomock.NewController(t))
 	publisher.EXPECT().Publish(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, protocol string, data []byte) error {
-			for i, node := range testNodes {
-				peer := p2p.Peer(fmt.Sprint(i))
+			for _, node := range testNodes {
 				switch protocol {
 				case pubsub.BeaconProposalProtocol:
-					require.NoError(t, node.HandleProposal(ctx, peer, data))
+					require.NoError(t, node.HandleProposal(ctx, p2p.Peer(node.edSigner.NodeID().ShortString()), data))
 				case pubsub.BeaconFirstVotesProtocol:
-					require.NoError(t, node.HandleFirstVotes(ctx, peer, data))
+					require.NoError(t, node.HandleFirstVotes(ctx, p2p.Peer(node.edSigner.NodeID().ShortString()), data))
 				case pubsub.BeaconFollowingVotesProtocol:
-					require.NoError(t, node.HandleFollowingVotes(ctx, peer, data))
+					require.NoError(t, node.HandleFollowingVotes(ctx, p2p.Peer(node.edSigner.NodeID().ShortString()), data))
 				case pubsub.BeaconWeakCoinProtocol:
 				}
 			}
@@ -177,7 +176,7 @@ func TestBeacon_MultipleNodes(t *testing.T) {
 	bootstrap := types.Beacon{1, 2, 3, 4}
 	now := time.Now()
 	for i := 0; i < numNodes; i++ {
-		node := newTestDriver(t, cfg, publisher, numMinersPerNode, fmt.Sprintf("node-%d", i))
+		node := newTestDriver(t, cfg, publisher)
 		require.NoError(t, node.UpdateBeacon(types.EpochID(2), bootstrap))
 		node.mSync.EXPECT().IsSynced(gomock.Any()).Return(true).AnyTimes()
 		node.mClock.EXPECT().CurrentLayer().Return(current).AnyTimes()
@@ -196,11 +195,8 @@ func TestBeacon_MultipleNodes(t *testing.T) {
 			// make the first node non-smeshing node
 			continue
 		}
-
 		for _, db := range dbs {
-			for _, s := range node.signers {
-				createATX(t, db, atxPublishLid, s, 1, time.Now().Add(-1*time.Second))
-			}
+			createATX(t, db, atxPublishLid, node.edSigner, 1, time.Now().Add(-1*time.Second))
 		}
 	}
 	var wg sync.WaitGroup
@@ -228,14 +224,14 @@ func TestBeacon_MultipleNodes_OnlyOneHonest(t *testing.T) {
 	publisher := pubsubmocks.NewMockPublisher(gomock.NewController(t))
 	publisher.EXPECT().Publish(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, protocol string, data []byte) error {
-			for i, node := range testNodes {
+			for _, node := range testNodes {
 				switch protocol {
 				case pubsub.BeaconProposalProtocol:
-					require.NoError(t, node.HandleProposal(ctx, p2p.Peer(fmt.Sprint(i)), data))
+					require.NoError(t, node.HandleProposal(ctx, p2p.Peer(node.edSigner.NodeID().ShortString()), data))
 				case pubsub.BeaconFirstVotesProtocol:
-					require.NoError(t, node.HandleFirstVotes(ctx, p2p.Peer(fmt.Sprint(i)), data))
+					require.NoError(t, node.HandleFirstVotes(ctx, p2p.Peer(node.edSigner.NodeID().ShortString()), data))
 				case pubsub.BeaconFollowingVotesProtocol:
-					require.NoError(t, node.HandleFollowingVotes(ctx, p2p.Peer(fmt.Sprint(i)), data))
+					require.NoError(t, node.HandleFollowingVotes(ctx, p2p.Peer(node.edSigner.NodeID().ShortString()), data))
 				case pubsub.BeaconWeakCoinProtocol:
 				}
 			}
@@ -249,7 +245,7 @@ func TestBeacon_MultipleNodes_OnlyOneHonest(t *testing.T) {
 	bootstrap := types.Beacon{1, 2, 3, 4}
 	now := time.Now()
 	for i := 0; i < numNodes; i++ {
-		node := newTestDriver(t, cfg, publisher, 3, fmt.Sprintf("node-%d", i))
+		node := newTestDriver(t, cfg, publisher)
 		require.NoError(t, node.UpdateBeacon(types.EpochID(2), bootstrap))
 		node.mSync.EXPECT().IsSynced(gomock.Any()).Return(true).AnyTimes()
 		node.mClock.EXPECT().CurrentLayer().Return(current).AnyTimes()
@@ -265,11 +261,9 @@ func TestBeacon_MultipleNodes_OnlyOneHonest(t *testing.T) {
 	}
 	for i, node := range testNodes {
 		for _, db := range dbs {
-			for _, s := range node.signers {
-				createATX(t, db, atxPublishLid, s, 1, time.Now().Add(-1*time.Second))
-				if i != 0 {
-					require.NoError(t, identities.SetMalicious(db, s.NodeID(), []byte("bad"), time.Now()))
-				}
+			createATX(t, db, atxPublishLid, node.edSigner, 1, time.Now().Add(-1*time.Second))
+			if i != 0 {
+				require.NoError(t, identities.SetMalicious(db, node.edSigner.NodeID(), []byte("bad"), time.Now()))
 			}
 		}
 	}
@@ -305,7 +299,7 @@ func TestBeacon_NoProposals(t *testing.T) {
 	now := time.Now()
 	bootstrap := types.Beacon{1, 2, 3, 4}
 	for i := 0; i < numNodes; i++ {
-		node := newTestDriver(t, cfg, publisher, 3, fmt.Sprintf("node-%d", i))
+		node := newTestDriver(t, cfg, publisher)
 		require.NoError(t, node.UpdateBeacon(types.EpochID(2), bootstrap))
 		node.mSync.EXPECT().IsSynced(gomock.Any()).Return(true).AnyTimes()
 		node.mClock.EXPECT().CurrentLayer().Return(current).AnyTimes()
@@ -321,9 +315,7 @@ func TestBeacon_NoProposals(t *testing.T) {
 	}
 	for _, node := range testNodes {
 		for _, db := range dbs {
-			for _, s := range node.signers {
-				createATX(t, db, atxPublishLid, s, 1, time.Now().Add(-1*time.Second))
-			}
+			createATX(t, db, atxPublishLid, node.edSigner, 1, time.Now().Add(-1*time.Second))
 		}
 	}
 	var wg sync.WaitGroup
@@ -384,12 +376,7 @@ func TestBeaconNotSynced_ReleaseMemory(t *testing.T) {
 	end := start + numEpochsToKeep + 10
 	tpd.mClock.EXPECT().CurrentLayer().Return(start.FirstLayer()).AnyTimes()
 	for eid := start; eid <= end; eid++ {
-		b := types.NewExistingBallot(
-			types.RandomBallotID(),
-			types.EmptyEdSignature,
-			types.EmptyNodeID,
-			start.FirstLayer(),
-		)
+		b := types.NewExistingBallot(types.RandomBallotID(), types.EmptyEdSignature, types.EmptyNodeID, start.FirstLayer())
 		b.EligibilityProofs = []types.VotingEligibility{{J: 1}}
 		tpd.ReportBeaconFromBallot(eid, &b, types.RandomBeacon(), fixed.New64(1))
 		require.ErrorIs(t, tpd.onNewEpoch(context.Background(), eid), errNodeNotSynced)
@@ -420,10 +407,8 @@ func TestBeaconWithMetrics(t *testing.T) {
 	epoch := types.EpochID(3)
 	for i := types.EpochID(2); i < epoch; i++ {
 		lid := i.FirstLayer().Sub(1)
-		for _, s := range tpd.signers {
-			createATX(t, tpd.cdb, lid, s, 199, time.Now())
-		}
-		createRandomATXs(t, tpd.cdb, lid, 9)
+		createATX(t, tpd.cdb, lid, tpd.edSigner, 199, time.Now())
+		createRandomATXs(t, tpd.cdb, lid, numATXs-1)
 	}
 	finalLayer := types.LayerID(types.GetLayersPerEpoch() * uint32(epoch))
 	beacon1 := types.RandomBeacon()
@@ -434,20 +419,10 @@ func TestBeaconWithMetrics(t *testing.T) {
 			require.NoError(t, tpd.onNewEpoch(context.Background(), layer.GetEpoch()))
 		}
 		thisEpoch := layer.GetEpoch()
-		b := types.NewExistingBallot(
-			types.RandomBallotID(),
-			types.EmptyEdSignature,
-			types.EmptyNodeID,
-			thisEpoch.FirstLayer(),
-		)
+		b := types.NewExistingBallot(types.RandomBallotID(), types.EmptyEdSignature, types.EmptyNodeID, thisEpoch.FirstLayer())
 		b.EligibilityProofs = []types.VotingEligibility{{J: 1}}
 		tpd.recordBeacon(thisEpoch, &b, beacon1, fixed.New64(1))
-		b = types.NewExistingBallot(
-			types.RandomBallotID(),
-			types.EmptyEdSignature,
-			types.EmptyNodeID,
-			thisEpoch.FirstLayer(),
-		)
+		b = types.NewExistingBallot(types.RandomBallotID(), types.EmptyEdSignature, types.EmptyNodeID, thisEpoch.FirstLayer())
 		b.EligibilityProofs = []types.VotingEligibility{{J: 1}}
 		tpd.recordBeacon(thisEpoch, &b, beacon2, fixed.New64(1))
 
@@ -461,11 +436,7 @@ func TestBeaconWithMetrics(t *testing.T) {
 			beacon1.ShortString(), thisEpoch, count,
 			beacon2.ShortString(), thisEpoch, count,
 		)
-		err := testutil.GatherAndCompare(
-			prometheus.DefaultGatherer,
-			strings.NewReader(expected),
-			"spacemesh_beacons_beacon_observed_total",
-		)
+		err := testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(expected), "spacemesh_beacons_beacon_observed_total")
 		require.NoError(t, err)
 
 		weight := layer.OrdinalInEpoch() + 1
@@ -478,17 +449,10 @@ func TestBeaconWithMetrics(t *testing.T) {
 			beacon1.ShortString(), thisEpoch, weight,
 			beacon2.ShortString(), thisEpoch, weight,
 		)
-		err = testutil.GatherAndCompare(
-			prometheus.DefaultGatherer,
-			strings.NewReader(expected),
-			"spacemesh_beacons_beacon_observed_weight",
-		)
+		err = testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(expected), "spacemesh_beacons_beacon_observed_weight")
 		require.NoError(t, err)
 
-		calcWeightCount, err := testutil.GatherAndCount(
-			prometheus.DefaultGatherer,
-			"spacemesh_beacons_beacon_calculated_weight",
-		)
+		calcWeightCount, err := testutil.GatherAndCount(prometheus.DefaultGatherer, "spacemesh_beacons_beacon_calculated_weight")
 		require.NoError(t, err)
 		require.Zero(t, calcWeightCount)
 	}
@@ -688,12 +652,7 @@ func TestBeacon_ReportBeaconFromBallot(t *testing.T) {
 			mclock.EXPECT().CurrentLayer().Return(epoch.FirstLayer()).AnyTimes()
 			for beacon, weights := range tc.beaconBallots {
 				for _, w := range weights {
-					b := types.NewExistingBallot(
-						types.RandomBallotID(),
-						types.EmptyEdSignature,
-						types.EmptyNodeID,
-						epoch.FirstLayer(),
-					)
+					b := types.NewExistingBallot(types.RandomBallotID(), types.EmptyEdSignature, types.EmptyNodeID, epoch.FirstLayer())
 					b.EligibilityProofs = []types.VotingEligibility{{J: 1}}
 					pd.ReportBeaconFromBallot(epoch, &b, beacon, w)
 				}
@@ -962,22 +921,19 @@ func TestBeacon_atxThreshold(t *testing.T) {
 		threshold string
 	}{
 		{
-			name: "Case 1",
-			w:    60,
-			threshold: "22812203088110976093205858028501456624466142536242799652895962589496375836043386932529564056586" +
-				"85699889321154786797203655344352360687718999126330659861107094125997337180132475041437096123301888",
+			name:      "Case 1",
+			w:         60,
+			threshold: "2281220308811097609320585802850145662446614253624279965289596258949637583604338693252956405658685699889321154786797203655344352360687718999126330659861107094125997337180132475041437096123301888",
 		},
 		{
-			name: "Case 2",
-			w:    10_000,
-			threshold: "18935255055005106377502632398712282551719911452308460382048488311892953261334543784347262759720" +
-				"917437038480763542475179136852475093285227949507665240470812709909012324673914264266057279602688",
+			name:      "Case 2",
+			w:         10_000,
+			threshold: "18935255055005106377502632398712282551719911452308460382048488311892953261334543784347262759720917437038480763542475179136852475093285227949507665240470812709909012324673914264266057279602688",
 		},
 		{
-			name: "Case 3",
-			w:    100_000,
-			threshold: "18970711981368999716491430411587745105506104524672542810046809328543990110060906572290051896861" +
-				"41691549362111655061764931498490692502427712970984851624895957066181188995976870137803158061056",
+			name:      "Case 3",
+			w:         100_000,
+			threshold: "1897071198136899971649143041158774510550610452467254281004680932854399011006090657229005189686141691549362111655061764931498490692502427712970984851624895957066181188995976870137803158061056",
 		},
 	}
 
@@ -1028,13 +984,7 @@ func TestBeacon_proposalPassesEligibilityThreshold(t *testing.T) {
 			for i := 0; i < tc.wEarly; i++ {
 				signer, err := signing.NewEdSigner()
 				require.NoError(t, err)
-				proposal := buildSignedProposal(
-					context.Background(),
-					logtest.New(t),
-					signer.VRFSigner(),
-					3,
-					types.VRFPostIndex(1),
-				)
+				proposal := buildSignedProposal(context.Background(), logtest.New(t), signer.VRFSigner(), 3, types.VRFPostIndex(1))
 				if checker.PassThreshold(proposal) {
 					numEligible++
 				}
@@ -1103,13 +1053,7 @@ func TestBeacon_getSignedProposal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := buildSignedProposal(
-				context.Background(),
-				logtest.New(t),
-				edSgn.VRFSigner(),
-				tc.epoch,
-				types.VRFPostIndex(1),
-			)
+			result := buildSignedProposal(context.Background(), logtest.New(t), edSgn.VRFSigner(), tc.epoch, types.VRFPostIndex(1))
 			require.Equal(t, tc.result, result)
 		})
 	}

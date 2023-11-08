@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/spacemeshos/go-spacemesh/codec"
 	"github.com/spacemeshos/go-spacemesh/common/types"
@@ -65,9 +64,6 @@ func createFetch(tb testing.TB) *testFetch {
 		mTxBlocksH:   mocks.NewMockSyncValidator(ctrl),
 		mTxProposalH: mocks.NewMockSyncValidator(ctrl),
 		mPoetH:       mocks.NewMockSyncValidator(ctrl),
-	}
-	for _, srv := range []*mocks.Mockrequester{tf.mMalS, tf.mAtxS, tf.mLyrS, tf.mHashS, tf.mMHashS, tf.mOpn2S} {
-		srv.EXPECT().Run(gomock.Any()).AnyTimes()
 	}
 	cfg := Config{
 		BatchTimeout:         2 * time.Second, // make sure we never hit the batch timeout
@@ -377,13 +373,7 @@ func TestFetch_PeerDroppedWhenMessageResultsInValidationReject(t *testing.T) {
 		}
 		return result, nil
 	}
-	badsrv := server.New(badPeerHost, hashProtocol, badPeerHandler)
-	var eg errgroup.Group
-	eg.Go(func() error {
-		badsrv.Run(ctx)
-		return nil
-	})
-	defer eg.Wait()
+	server.New(badPeerHost, hashProtocol, badPeerHandler)
 
 	fetcher := NewFetch(datastore.NewCachedDB(sql.InMemory(), lg), nil, nil, h,
 		WithContext(ctx),

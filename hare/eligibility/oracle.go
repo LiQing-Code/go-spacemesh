@@ -72,6 +72,7 @@ type Oracle struct {
 
 	beacons        system.BeaconGetter
 	cdb            *datastore.CachedDB
+	vrfSigner      *signing.VRFSigner
 	vrfVerifier    vrfVerifier
 	layersPerEpoch uint32
 	cfg            config.Config
@@ -83,6 +84,7 @@ func New(
 	beacons system.BeaconGetter,
 	db *datastore.CachedDB,
 	vrfVerifier vrfVerifier,
+	vrfSigner *signing.VRFSigner,
 	layersPerEpoch uint32,
 	cfg config.Config,
 	logger log.Log,
@@ -96,6 +98,7 @@ func New(
 		beacons:        beacons,
 		cdb:            db,
 		vrfVerifier:    vrfVerifier,
+		vrfSigner:      vrfSigner,
 		layersPerEpoch: layersPerEpoch,
 		activesCache:   ac,
 		fallback:       map[types.EpochID][]types.ATXID{},
@@ -174,14 +177,7 @@ func calcVrfFrac(vrfSig types.VrfSignature) fixed.Fixed {
 	return fixed.FracFromBytes(vrfSig[:8])
 }
 
-func (o *Oracle) prepareEligibilityCheck(
-	ctx context.Context,
-	layer types.LayerID,
-	round uint32,
-	committeeSize int,
-	id types.NodeID,
-	vrfSig types.VrfSignature,
-) (int, fixed.Fixed, fixed.Fixed, bool, error) {
+func (o *Oracle) prepareEligibilityCheck(ctx context.Context, layer types.LayerID, round uint32, committeeSize int, id types.NodeID, vrfSig types.VrfSignature) (int, fixed.Fixed, fixed.Fixed, bool, error) {
 	logger := o.WithContext(ctx).WithFields(
 		layer,
 		layer.GetEpoch(),
@@ -244,12 +240,7 @@ func (o *Oracle) prepareEligibilityCheck(
 		n *= uint64(committeeSize)
 	}
 	if n > maxSupportedN {
-		return 0, fixed.Fixed{}, fixed.Fixed{}, false, fmt.Errorf(
-			"miner weight exceeds supported maximum (id: %v, weight: %d, max: %d",
-			id,
-			minerWeight,
-			maxSupportedN,
-		)
+		return 0, fixed.Fixed{}, fixed.Fixed{}, false, fmt.Errorf("miner weight exceeds supported maximum (id: %v, weight: %d, max: %d", id, minerWeight, maxSupportedN)
 	}
 
 	p := fixed.DivUint64(uint64(committeeSize), totalWeight)
@@ -258,15 +249,7 @@ func (o *Oracle) prepareEligibilityCheck(
 
 // Validate validates the number of eligibilities of ID on the given Layer where msg is the VRF message, sig is the role
 // proof and assuming commSize as the expected committee size.
-func (o *Oracle) Validate(
-	ctx context.Context,
-	layer types.LayerID,
-	round uint32,
-	committeeSize int,
-	id types.NodeID,
-	sig types.VrfSignature,
-	eligibilityCount uint16,
-) (bool, error) {
+func (o *Oracle) Validate(ctx context.Context, layer types.LayerID, round uint32, committeeSize int, id types.NodeID, sig types.VrfSignature, eligibilityCount uint16) (bool, error) {
 	n, p, vrfFrac, done, err := o.prepareEligibilityCheck(ctx, layer, round, committeeSize, id, sig)
 	if done || err != nil {
 		return false, err
@@ -354,30 +337,17 @@ func (o *Oracle) CalcEligibility(
 }
 
 // Proof returns the role proof for the current Layer & Round.
-func (o *Oracle) Proof(
-	ctx context.Context,
-	signer *signing.VRFSigner,
-	layer types.LayerID,
-	round uint32,
-) (types.VrfSignature, error) {
+func (o *Oracle) Proof(ctx context.Context, layer types.LayerID, round uint32) (types.VrfSignature, error) {
 	beacon, err := o.beacons.GetBeacon(layer.GetEpoch())
 	if err != nil {
 		return types.EmptyVrfSignature, fmt.Errorf("get beacon: %w", err)
 	}
-	return GenVRF(ctx, signer, beacon, layer, round), nil
+	return o.GenVRF(ctx, o.vrfSigner, beacon, layer, round), nil
 }
 
 // GenVRF generates vrf for hare eligibility.
-func GenVRF(
-	ctx context.Context,
-	signer *signing.VRFSigner,
-	beacon types.Beacon,
-	layer types.LayerID,
-	round uint32,
-) types.VrfSignature {
-	return signer.Sign(
-		codec.MustEncode(&VrfMessage{Type: types.EligibilityHare, Beacon: beacon, Round: round, Layer: layer}),
-	)
+func (o *Oracle) GenVRF(ctx context.Context, signer *signing.VRFSigner, beacon types.Beacon, layer types.LayerID, round uint32) types.VrfSignature {
+	return signer.Sign(codec.MustEncode(&VrfMessage{Type: types.EligibilityHare, Beacon: beacon, Round: round, Layer: layer}))
 }
 
 // Returns a map of all active node IDs in the specified layer id.
@@ -461,10 +431,7 @@ func (o *Oracle) computeActiveSet(ctx context.Context, targetEpoch types.EpochID
 	return activeSet, nil
 }
 
-func (o *Oracle) computeActiveWeights(
-	targetEpoch types.EpochID,
-	activeSet []types.ATXID,
-) (map[types.NodeID]uint64, error) {
+func (o *Oracle) computeActiveWeights(targetEpoch types.EpochID, activeSet []types.ATXID) (map[types.NodeID]uint64, error) {
 	weightedActiveSet := make(map[types.NodeID]uint64)
 	for _, id := range activeSet {
 		atx, err := o.cdb.GetAtxHeader(id)
@@ -518,11 +485,7 @@ func (o *Oracle) activeSetFromRefBallots(epoch types.EpochID) ([]types.ATXID, er
 
 // IsIdentityActiveOnConsensusView returns true if the provided identity is active on the consensus view derived
 // from the specified layer, false otherwise.
-func (o *Oracle) IsIdentityActiveOnConsensusView(
-	ctx context.Context,
-	edID types.NodeID,
-	layer types.LayerID,
-) (bool, error) {
+func (o *Oracle) IsIdentityActiveOnConsensusView(ctx context.Context, edID types.NodeID, layer types.LayerID) (bool, error) {
 	o.WithContext(ctx).With().Debug("hare oracle checking for active identity")
 	defer func() {
 		o.WithContext(ctx).With().Debug("hare oracle active identity check complete")

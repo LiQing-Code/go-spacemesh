@@ -16,12 +16,6 @@ import (
 
 //go:generate scalegen
 
-// BytesToATXID is a helper to copy buffer into a ATXID.
-func BytesToATXID(buf []byte) (id ATXID) {
-	copy(id[:], buf)
-	return id
-}
-
 // ATXID is a 32-bit hash used to identify an activation transaction.
 type ATXID Hash32
 
@@ -84,13 +78,12 @@ func (ids ATXIDs) MarshalLogArray(enc log.ArrayEncoder) error {
 	return nil
 }
 
-// NIPostChallenge is the set of fields that's serialized, hashed and submitted to the PoET service
-// to be included in the PoET membership proof.
+// NIPostChallenge is the set of fields that's serialized, hashed and submitted to the PoET service to be included in the
+// PoET membership proof.
 type NIPostChallenge struct {
 	PublishEpoch EpochID
 	// Sequence number counts the number of ancestors of the ATX. It sequentially increases for each ATX in the chain.
-	// Two ATXs with the same sequence number from the same miner can be used as the proof of malfeasance against
-	// that miner.
+	// Two ATXs with the same sequence number from the same miner can be used as the proof of malfeasance against that miner.
 	Sequence uint64
 	// the previous ATX's ID (for all but the first in the sequence)
 	PrevATXID      ATXID
@@ -467,8 +460,7 @@ func (p *Post) String() string {
 	return fmt.Sprintf("nonce: %v, indices: %s", p.Nonce, hex.EncodeToString(p.Indices))
 }
 
-// PostMetadata is similar postShared.ProofMetadata, but without the fields which can be derived elsewhere
-// in a given ATX (eg. NodeID, NumUnits).
+// PostMetadata is similar postShared.ProofMetadata, but without the fields which can be derived elsewhere in a given ATX (ID, NumUnits).
 type PostMetadata struct {
 	Challenge     []byte `scale:"max=32"`
 	LabelsPerUnit uint64

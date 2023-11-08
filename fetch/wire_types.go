@@ -27,17 +27,15 @@ type ResponseMessage struct {
 
 // RequestBatch is a batch of requests and a hash of all requests as ID.
 type RequestBatch struct {
-	ID types.Hash32
-	// depends on fetch config `BatchSize` which defaults to 20, more than 1000 seems unlikely
-	Requests []RequestMessage `scale:"max=1000"`
+	ID       types.Hash32
+	Requests []RequestMessage `scale:"max=1000"` // depends on fetch config `BatchSize` which defaults to 20, more than 1000 seems unlikely
 }
 
 // ResponseBatch is the response struct send for a RequestBatch. the ResponseBatch ID must be the same
 // as stated in RequestBatch even if not all Data is present.
 type ResponseBatch struct {
-	ID types.Hash32
-	// depends on fetch config `BatchSize` which defaults to 20, more than 1000 seems unlikely
-	Responses []ResponseMessage `scale:"max=1000"`
+	ID        types.Hash32
+	Responses []ResponseMessage `scale:"max=1000"` // depends on fetch config `BatchSize` which defaults to 20, more than 1000 seems unlikely
 }
 
 // MeshHashRequest is used by ForkFinder to request the hashes of layers from
@@ -96,8 +94,7 @@ func (r *MeshHashRequest) MarshalLogObject(encoder log.ObjectEncoder) error {
 }
 
 type MeshHashes struct {
-	// depends on syncer Config `MaxHashesInReq`, defaults to 100, 1000 is a safe upper bound
-	Hashes []types.Hash32 `scale:"max=1000"`
+	Hashes []types.Hash32 `scale:"max=1000"` // depends on syncer Config `MaxHashesInReq`, defaults to 100, 1000 is a safe upper bound
 }
 
 type MaliciousIDs struct {

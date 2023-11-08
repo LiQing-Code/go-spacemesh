@@ -38,11 +38,11 @@ func TestPeerDisconnectForMessageResultValidationReject(t *testing.T) {
 	conf1.API.PublicListener = "0.0.0.0:0"
 	conf1.API.PrivateListener = "0.0.0.0:0"
 	app1 := NewApp(t, &conf1, l)
+	conf2 := config.DefaultTestConfig()
 
 	// We need to copy the genesis config to ensure that both nodes share the
-	// same genesis ID, otherwise they will not be able to connect to each
+	// same gnenesis ID, otherwise they will not be able to connect to each
 	// other.
-	conf2 := config.DefaultTestConfig()
 	*conf2.Genesis = *conf1.Genesis
 	conf2.DataDirParent = t.TempDir()
 	conf2.FileLock = filepath.Join(conf2.DataDirParent, "LOCK")
@@ -52,23 +52,19 @@ func TestPeerDisconnectForMessageResultValidationReject(t *testing.T) {
 	app2 := NewApp(t, &conf2, l)
 
 	types.SetLayersPerEpoch(conf1.LayersPerEpoch)
-	eg, grpContext := errgroup.WithContext(ctx)
-	eg.Go(func() error {
+	t.Cleanup(func() {
+		app1.Cleanup(ctx)
+		app2.Cleanup(ctx)
+	})
+	g, grpContext := errgroup.WithContext(ctx)
+	g.Go(func() error {
 		return app1.Start(grpContext)
 	})
 	<-app1.Started()
-	t.Cleanup(func() {
-		app1.Cleanup(ctx)
-		app1.eg.Wait()
-	})
-	eg.Go(func() error {
+	g.Go(func() error {
 		return app2.Start(grpContext)
 	})
 	<-app2.Started()
-	t.Cleanup(func() {
-		app2.Cleanup(ctx)
-		app2.eg.Wait()
-	})
 
 	// Connect app2 to app1
 	err := app2.Host().Connect(context.Background(), peer.AddrInfo{
@@ -125,7 +121,7 @@ func TestPeerDisconnectForMessageResultValidationReject(t *testing.T) {
 	// Stop the nodes by canceling the context
 	cancel()
 	// Wait for nodes to finish
-	require.NoError(t, eg.Wait())
+	require.NoError(t, g.Wait())
 }
 
 func getStream(c network.Conn, p protocol.ID, dir network.Direction) network.Stream {

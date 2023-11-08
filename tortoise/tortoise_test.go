@@ -886,13 +886,12 @@ func TestVotesDecodingWithoutBaseBallot(t *testing.T) {
 		)
 
 		var last, verified types.LayerID
-		generator := sim.WithVoteGenerator(func(rng *rand.Rand, layers []*types.Layer, i int) sim.Voting {
+		for _, last = range sim.GenLayers(s, sim.WithSequence(2, sim.WithVoteGenerator(func(rng *rand.Rand, layers []*types.Layer, i int) sim.Voting {
 			if i >= breakpoint {
 				return voteWithBaseBallot(types.BallotID{1, 1, 1})(rng, layers, i)
 			}
 			return sim.ConsistentVoting(rng, layers, i)
-		})
-		for _, last = range sim.GenLayers(s, sim.WithSequence(2, generator)) {
+		}))) {
 			tortoise.TallyVotes(ctx, last)
 			verified = tortoise.LatestComplete()
 		}
@@ -3206,6 +3205,22 @@ func TestUpdates(t *testing.T) {
 		require.False(t, updates[0].Blocks[0].Valid)
 		require.Equal(t, id, updates[0].Blocks[0].Header.ID)
 	})
+}
+
+func TestMinimalActiveSetWeight(t *testing.T) {
+	s := newSession(t).
+		withMinActiveSetWeight(1000)
+
+	s.smesher(0).atx(1, new(aopt).height(10).weight(2))
+	s.beacon(1, "a")
+	s.smesher(0).atx(1).ballot(1, new(bopt).
+		totalEligibilities(s.epochEligibilities()).
+		beacon("a").
+		eligibilities(1),
+	)
+	s.tallyWait(1)
+	s.updates(t, new(results).verified(0).next(1))
+	s.runInorder()
 }
 
 func TestDuplicateBallot(t *testing.T) {

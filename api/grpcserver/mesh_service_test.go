@@ -141,23 +141,13 @@ func TestMeshService_MalfeasanceQuery(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	genTime := NewMockgenesisTimeAPI(ctrl)
 	db := sql.InMemory()
-	srv := NewMeshService(
-		datastore.NewCachedDB(db, logtest.New(t)),
-		meshAPIMock,
-		conStateAPI,
-		genTime,
-		layersPerEpoch,
-		types.Hash20{},
-		layerDuration,
-		layerAvgSize,
-		txsPerProposal,
-	)
+	srv := NewMeshService(datastore.NewCachedDB(db, logtest.New(t)), meshAPIMock, conStateAPI, genTime, layersPerEpoch, types.Hash20{}, layerDuration, layerAvgSize, txsPerProposal)
 	cfg, cleanup := launchServer(t, srv)
 	t.Cleanup(cleanup)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	conn := dialGrpc(ctx, t, cfg)
+	conn := dialGrpc(ctx, t, cfg.PublicListener)
 	client := pb.NewMeshServiceClient(conn)
 	nodeID, proof := BallotMalfeasance(t, db)
 
@@ -194,23 +184,13 @@ func TestMeshService_MalfeasanceStream(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	genTime := NewMockgenesisTimeAPI(ctrl)
 	db := sql.InMemory()
-	srv := NewMeshService(
-		datastore.NewCachedDB(db, logtest.New(t)),
-		meshAPIMock,
-		conStateAPI,
-		genTime,
-		layersPerEpoch,
-		types.Hash20{},
-		layerDuration,
-		layerAvgSize,
-		txsPerProposal,
-	)
+	srv := NewMeshService(datastore.NewCachedDB(db, logtest.New(t)), meshAPIMock, conStateAPI, genTime, layersPerEpoch, types.Hash20{}, layerDuration, layerAvgSize, txsPerProposal)
 	cfg, cleanup := launchServer(t, srv)
 	t.Cleanup(cleanup)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	conn := dialGrpc(ctx, t, cfg)
+	conn := dialGrpc(ctx, t, cfg.PublicListener)
 	client := pb.NewMeshServiceClient(conn)
 
 	for i := 0; i < 10; i++ {

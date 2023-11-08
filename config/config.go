@@ -15,7 +15,6 @@ import (
 	"github.com/spacemeshos/go-spacemesh/beacon"
 	"github.com/spacemeshos/go-spacemesh/bootstrap"
 	"github.com/spacemeshos/go-spacemesh/checkpoint"
-	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/datastore"
 	"github.com/spacemeshos/go-spacemesh/fetch"
 	vm "github.com/spacemeshos/go-spacemesh/genvm"
@@ -46,27 +45,26 @@ func init() {
 // Config defines the top level configuration for a spacemesh node.
 type Config struct {
 	BaseConfig      `mapstructure:"main"`
-	Genesis         *GenesisConfig                  `mapstructure:"genesis"`
-	PublicMetrics   PublicMetrics                   `mapstructure:"public-metrics"`
-	Tortoise        tortoise.Config                 `mapstructure:"tortoise"`
-	P2P             p2p.Config                      `mapstructure:"p2p"`
-	API             grpcserver.Config               `mapstructure:"api"`
-	HARE            hareConfig.Config               `mapstructure:"hare"`
-	HARE3           hare3.Config                    `mapstructure:"hare3"`
-	HareEligibility eligConfig.Config               `mapstructure:"hare-eligibility"`
-	Beacon          beacon.Config                   `mapstructure:"beacon"`
-	TIME            timeConfig.TimeConfig           `mapstructure:"time"`
-	VM              vm.Config                       `mapstructure:"vm"`
-	POST            activation.PostConfig           `mapstructure:"post"`
-	POSTService     activation.PostSupervisorConfig `mapstructure:"post-service"`
-	POET            activation.PoetConfig           `mapstructure:"poet"`
-	SMESHING        SmeshingConfig                  `mapstructure:"smeshing"`
-	LOGGING         LoggerConfig                    `mapstructure:"logging"`
-	FETCH           fetch.Config                    `mapstructure:"fetch"`
-	Bootstrap       bootstrap.Config                `mapstructure:"bootstrap"`
-	Sync            syncer.Config                   `mapstructure:"syncer"`
-	Recovery        checkpoint.Config               `mapstructure:"recovery"`
-	Cache           datastore.Config                `mapstructure:"cache"`
+	Genesis         *GenesisConfig        `mapstructure:"genesis"`
+	PublicMetrics   PublicMetrics         `mapstructure:"public-metrics"`
+	Tortoise        tortoise.Config       `mapstructure:"tortoise"`
+	P2P             p2p.Config            `mapstructure:"p2p"`
+	API             grpcserver.Config     `mapstructure:"api"`
+	HARE            hareConfig.Config     `mapstructure:"hare"`
+	HARE3           hare3.Config          `mapstructure:"hare3"`
+	HareEligibility eligConfig.Config     `mapstructure:"hare-eligibility"`
+	Beacon          beacon.Config         `mapstructure:"beacon"`
+	TIME            timeConfig.TimeConfig `mapstructure:"time"`
+	VM              vm.Config             `mapstructure:"vm"`
+	POST            activation.PostConfig `mapstructure:"post"`
+	POET            activation.PoetConfig `mapstructure:"poet"`
+	SMESHING        SmeshingConfig        `mapstructure:"smeshing"`
+	LOGGING         LoggerConfig          `mapstructure:"logging"`
+	FETCH           fetch.Config          `mapstructure:"fetch"`
+	Bootstrap       bootstrap.Config      `mapstructure:"bootstrap"`
+	Sync            syncer.Config         `mapstructure:"syncer"`
+	Recovery        checkpoint.Config     `mapstructure:"recovery"`
+	Cache           datastore.Config      `mapstructure:"cache"`
 }
 
 // DataDir returns the absolute path to use for the node's data. This is the tilde-expanded path given in the config
@@ -115,8 +113,6 @@ type BaseConfig struct {
 	DatabaseSizeMeteringInterval time.Duration `mapstructure:"db-size-metering-interval"`
 	DatabasePruneInterval        time.Duration `mapstructure:"db-prune-interval"`
 
-	PruneActivesetsFrom types.EpochID `mapstructure:"prune-activesets-from"`
-
 	NetworkHRP string `mapstructure:"network-hrp"`
 
 	// MinerGoodAtxsPercent is a threshold to decide if tortoise activeset should be
@@ -158,7 +154,6 @@ func DefaultConfig() Config {
 		TIME:            timeConfig.DefaultConfig(),
 		VM:              vm.DefaultConfig(),
 		POST:            activation.DefaultPostConfig(),
-		POSTService:     activation.DefaultPostServiceConfig(),
 		POET:            activation.DefaultPoetConfig(),
 		SMESHING:        DefaultSmeshingConfig(),
 		FETCH:           fetch.DefaultConfig(),
@@ -174,10 +169,8 @@ func DefaultConfig() Config {
 func DefaultTestConfig() Config {
 	conf := DefaultConfig()
 	conf.BaseConfig = defaultTestConfig()
-	conf.Genesis = DefaultTestGenesisConfig()
 	conf.P2P = p2p.DefaultConfig()
 	conf.API = grpcserver.DefaultTestConfig()
-	conf.POSTService = activation.DefaultTestPostServiceConfig()
 	return conf
 }
 
@@ -188,7 +181,7 @@ func defaultBaseConfig() BaseConfig {
 		FileLock:                     filepath.Join(os.TempDir(), "spacemesh.lock"),
 		CollectMetrics:               false,
 		MetricsPort:                  1010,
-		ProfilerName:                 "go-spacemesh",
+		ProfilerName:                 "gp-spacemesh",
 		LayerDuration:                30 * time.Second,
 		LayersPerEpoch:               3,
 		PoETServers:                  []string{"127.0.0.1"},
@@ -218,7 +211,6 @@ func defaultTestConfig() BaseConfig {
 	conf := defaultBaseConfig()
 	conf.MetricsPort += 10000
 	conf.NetworkHRP = "stest"
-	types.SetNetworkHRP(conf.NetworkHRP)
 	return conf
 }
 

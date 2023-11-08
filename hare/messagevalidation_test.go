@@ -30,8 +30,10 @@ func defaultValidator(tb testing.TB) *syntaxContextValidator {
 
 	signer, err := signing.NewEdSigner()
 	require.NoError(tb, err)
+	edVerifier, err := signing.NewEdVerifier()
+	require.NoError(tb, err)
 
-	return newSyntaxContextValidator(signer, signing.NewEdVerifier(), lowThresh10, trueValidator,
+	return newSyntaxContextValidator(signer, edVerifier, lowThresh10, trueValidator,
 		sq, truer{}, newPubGetter(), NewEligibilityTracker(lowThresh10), logtest.New(tb),
 	)
 }
@@ -95,10 +97,7 @@ func TestEligibilityValidator_validateRole_FailedToValidate(t *testing.T) {
 	m.Layer = types.LayerID(111)
 	myErr := errors.New("my error")
 
-	mo.EXPECT().
-		Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(false, myErr).
-		Times(1)
+	mo.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(false, myErr).Times(1)
 	res := ev.Validate(context.Background(), m)
 	require.False(t, res)
 }
@@ -114,10 +113,7 @@ func TestEligibilityValidator_validateRole_NotEligible(t *testing.T) {
 	m := BuildPreRoundMsg(signer, NewDefaultEmptySet(), types.EmptyVrfSignature)
 	m.Layer = types.LayerID(111)
 
-	mo.EXPECT().
-		Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(false, nil).
-		Times(1)
+	mo.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
 	res := ev.Validate(context.Background(), m)
 	require.False(t, res)
 }
@@ -133,10 +129,7 @@ func TestEligibilityValidator_validateRole_Success(t *testing.T) {
 	m := BuildPreRoundMsg(signer, NewDefaultEmptySet(), types.EmptyVrfSignature)
 	m.Layer = types.LayerID(111)
 
-	mo.EXPECT().
-		Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(true, nil).
-		Times(1)
+	mo.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).Times(1)
 	res := ev.Validate(context.Background(), m)
 	require.True(t, res)
 }
@@ -349,20 +342,12 @@ func (pg pubGetter) NodeID(m *Message) types.NodeID {
 func TestMessageValidator_SyntacticallyValidateMessage(t *testing.T) {
 	signer, err := signing.NewEdSigner()
 	require.NoError(t, err)
+	edVerifier, err := signing.NewEdVerifier()
+	require.NoError(t, err)
 	et := NewEligibilityTracker(100)
 	vfunc := func(m *Message) bool { return true }
 
-	sv := newSyntaxContextValidator(
-		signer,
-		signing.NewEdVerifier(),
-		1,
-		vfunc,
-		nil,
-		truer{},
-		newPubGetter(),
-		et,
-		logtest.New(t),
-	)
+	sv := newSyntaxContextValidator(signer, edVerifier, 1, vfunc, nil, truer{}, newPubGetter(), et, logtest.New(t))
 	m := BuildPreRoundMsg(signer, NewDefaultEmptySet(), types.EmptyVrfSignature)
 	require.True(t, sv.SyntacticallyValidateMessage(context.Background(), m))
 	m = BuildPreRoundMsg(signer, NewSetFromValues(types.RandomProposalID()), types.EmptyVrfSignature)
@@ -373,11 +358,7 @@ func TestMessageValidator_validateSVPTypeA(t *testing.T) {
 	signer, err := signing.NewEdSigner()
 	require.NoError(t, err)
 
-	m := buildProposalMsg(
-		signer,
-		NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}),
-		types.EmptyVrfSignature,
-	)
+	m := buildProposalMsg(signer, NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}), types.EmptyVrfSignature)
 	s1 := NewSetFromValues(types.ProposalID{1})
 	s2 := NewSetFromValues(types.ProposalID{3})
 	s3 := NewSetFromValues(types.ProposalID{1}, types.ProposalID{5})
@@ -394,11 +375,7 @@ func TestMessageValidator_validateSVPTypeB(t *testing.T) {
 	signer, err := signing.NewEdSigner()
 	require.NoError(t, err)
 
-	m := buildProposalMsg(
-		signer,
-		NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}),
-		types.EmptyVrfSignature,
-	)
+	m := buildProposalMsg(signer, NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}), types.EmptyVrfSignature)
 	s1 := NewSetFromValues(types.ProposalID{1})
 	m.Svp = buildSVP(preRound, s1)
 	m.Values = NewSetFromValues(types.ProposalID{1}).ToSlice()
@@ -410,31 +387,16 @@ func TestMessageValidator_validateSVPTypeB(t *testing.T) {
 func TestMessageValidator_validateSVP(t *testing.T) {
 	signer, err := signing.NewEdSigner()
 	require.NoError(t, err)
+	edVerifier, err := signing.NewEdVerifier()
+	require.NoError(t, err)
 
 	ctrl := gomock.NewController(t)
 	mockStateQ := mocks.NewMockstateQuerier(ctrl)
-	mockStateQ.EXPECT().
-		IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(true, nil).
-		AnyTimes()
+	mockStateQ.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	et := NewEligibilityTracker(100)
 	vfunc := func(m *Message) bool { return true }
-	sv := newSyntaxContextValidator(
-		signer,
-		signing.NewEdVerifier(),
-		1,
-		vfunc,
-		mockStateQ,
-		truer{},
-		newPubGetter(),
-		et,
-		logtest.New(t),
-	)
-	m := buildProposalMsg(
-		signer,
-		NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}),
-		types.EmptyVrfSignature,
-	)
+	sv := newSyntaxContextValidator(signer, edVerifier, 1, vfunc, mockStateQ, truer{}, newPubGetter(), et, logtest.New(t))
+	m := buildProposalMsg(signer, NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}), types.EmptyVrfSignature)
 	s1 := NewSetFromValues(types.ProposalID{1})
 	m.Svp = buildSVP(preRound, s1)
 	m.Svp.Messages[0].Type = commit
@@ -494,99 +456,29 @@ func validateMatrix(tb testing.TB, mType MessageType, msgK uint32, exp []error) 
 }
 
 func TestSyntaxContextValidator_StatusContextMatrix(t *testing.T) {
-	msg0 := []error{
-		errEarlyMsg,
-		nil,
-		errInvalidRound,
-		errInvalidRound,
-		errInvalidRound,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-	}
-	msg4 := []error{
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errEarlyMsg,
-		nil,
-		errInvalidRound,
-		errInvalidRound,
-		errInvalidRound,
-	}
+	msg0 := []error{errEarlyMsg, nil, errInvalidRound, errInvalidRound, errInvalidRound, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter}
+	msg4 := []error{errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errEarlyMsg, nil, errInvalidRound, errInvalidRound, errInvalidRound}
 	validateMatrix(t, status, 0, msg0)
 	validateMatrix(t, status, 4, msg4)
 }
 
 func TestSyntaxContextValidator_ProposalContextMatrix(t *testing.T) {
-	msg1 := []error{
-		errInvalidRound,
-		errEarlyMsg,
-		nil,
-		nil,
-		errInvalidRound,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-	}
-	msg5 := []error{
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errEarlyMsg,
-		nil,
-		nil,
-		errInvalidRound,
-	}
+	msg1 := []error{errInvalidRound, errEarlyMsg, nil, nil, errInvalidRound, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter}
+	msg5 := []error{errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errEarlyMsg, nil, nil, errInvalidRound}
 	validateMatrix(t, proposal, 1, msg1)
 	validateMatrix(t, proposal, 5, msg5)
 }
 
 func TestSyntaxContextValidator_CommitContextMatrix(t *testing.T) {
-	msg2 := []error{
-		errInvalidRound,
-		errInvalidRound,
-		errEarlyMsg,
-		nil,
-		errInvalidRound,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-	}
-	msg6 := []error{
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidRound,
-		errEarlyMsg,
-		nil,
-		errInvalidRound,
-	}
+	msg2 := []error{errInvalidRound, errInvalidRound, errEarlyMsg, nil, errInvalidRound, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter}
+	msg6 := []error{errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidRound, errEarlyMsg, nil, errInvalidRound}
 	validateMatrix(t, commit, 2, msg2)
 	validateMatrix(t, commit, 6, msg6)
 }
 
 func TestSyntaxContextValidator_NotifyContextMatrix(t *testing.T) {
 	msg3 := []error{errInvalidRound, errInvalidRound, errInvalidRound, errEarlyMsg, nil, nil, nil, nil, nil}
-	msg7 := []error{
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidIter,
-		errInvalidRound,
-		errInvalidRound,
-		errEarlyMsg,
-		nil,
-	}
+	msg7 := []error{errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidIter, errInvalidRound, errInvalidRound, errEarlyMsg, nil}
 	validateMatrix(t, notify, 3, msg3)
 	validateMatrix(t, notify, 7, msg7)
 }

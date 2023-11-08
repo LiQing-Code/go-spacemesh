@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
+	postCfg "github.com/spacemeshos/post/config"
 	"github.com/spacemeshos/post/initialization"
 
-	"github.com/spacemeshos/go-spacemesh/activation"
 	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/config"
 )
@@ -20,6 +20,7 @@ func init() {
 func standalone() config.Config {
 	conf := config.DefaultConfig()
 	conf.NetworkHRP = "standalone"
+	types.SetNetworkHRP(conf.NetworkHRP) // set to generate coinbase
 
 	conf.TIME.Peersync.Disable = true
 	conf.Standalone = true
@@ -55,14 +56,13 @@ func standalone() config.Config {
 	conf.POST.MaxNumUnits = 2
 	conf.POST.MinNumUnits = 1
 
-	types.SetNetworkHRP(conf.NetworkHRP) // ensure that the correct HRP is set when generating the address below
 	conf.SMESHING.CoinbaseAccount = types.GenerateAddress([]byte("1")).String()
 	conf.SMESHING.Start = true
-	conf.SMESHING.Opts.ProviderID.SetUint32(initialization.CPUProviderID())
+	conf.SMESHING.Opts.ProviderID.SetInt64(int64(initialization.CPUProviderID()))
 	conf.SMESHING.Opts.NumUnits = 1
 	conf.SMESHING.Opts.Throttle = true
 	conf.SMESHING.Opts.DataDir = conf.DataDirParent
-	conf.SMESHING.ProvingOpts.RandomXMode = activation.PostRandomXModeLight
+	conf.SMESHING.ProvingOpts.Flags = postCfg.RecommendedPowFlags()
 
 	conf.Beacon.Kappa = 40
 	conf.Beacon.Theta = big.NewRat(1, 4)
@@ -75,7 +75,7 @@ func standalone() config.Config {
 	conf.Beacon.BeaconSyncWeightUnits = 10
 	conf.Beacon.VotesLimit = 100
 
-	conf.PoETServers = []string{"http://127.0.0.1:10010"}
+	conf.PoETServers = []string{"http://0.0.0.0:10010"}
 	conf.POET.GracePeriod = 12 * time.Second
 	conf.POET.CycleGap = 30 * time.Second
 	conf.POET.PhaseShift = 30 * time.Second
@@ -86,8 +86,6 @@ func standalone() config.Config {
 	conf.P2P.DisableNatPort = true
 
 	conf.API.PublicListener = "0.0.0.0:10092"
-	conf.API.PrivateListener = "127.0.0.1:10093"
-
-	conf.POSTService.NodeAddress = "http://127.0.0.1:10093"
+	conf.API.PrivateListener = "0.0.0.0:10093"
 	return conf
 }

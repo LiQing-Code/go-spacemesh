@@ -48,14 +48,11 @@ type atxProvider interface {
 	GetMalfeasanceProof(id types.NodeID) (*types.MalfeasanceProof, error)
 }
 
-type postSupervisor interface {
-	Start(opts activation.PostSetupOpts) error
-	Stop(deleteFiles bool) error
-
-	Config() activation.PostConfig
+type postSetupProvider interface {
 	Status() *activation.PostSetupStatus
 	Providers() ([]activation.PostSetupProvider, error)
 	Benchmark(p activation.PostSetupProvider) (int, error)
+	Config() activation.PostConfig
 }
 
 // peerCounter is an api to get amount of connected peers.

@@ -178,16 +178,15 @@ func createConsensusProcess(
 	broker := buildBroker(tb, sig.PublicKey().ShortString())
 	broker.mockSyncS.EXPECT().IsSynced(gomock.Any()).Return(true).AnyTimes()
 	broker.mockSyncS.EXPECT().IsBeaconSynced(gomock.Any()).Return(true).AnyTimes()
-	broker.mockStateQ.EXPECT().
-		IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(true, nil).
-		AnyTimes()
+	broker.mockStateQ.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	broker.mockMesh.EXPECT().GetMalfeasanceProof(gomock.Any()).AnyTimes()
 	broker.Start(ctx)
 	network.Register(pubsub.HareProtocol, broker.HandleMessage)
 	output := make(chan report, 1)
 	wc := make(chan wcReport, 1)
 	oracle.Register(isHonest, sig.NodeID())
+	edVerifier, err := signing.NewEdVerifier()
+	require.NoError(tb, err)
 	c, et, err := broker.Register(ctx, layer)
 	require.NoError(tb, err)
 	mch := make(chan *types.MalfeasanceGossip, cfg.N)
@@ -205,7 +204,7 @@ func createConsensusProcess(
 		oracle,
 		broker.mockStateQ,
 		sig,
-		signing.NewEdVerifier(),
+		edVerifier,
 		et,
 		sig.NodeID(),
 		network,
@@ -222,15 +221,7 @@ func TestConsensus_MultipleIterations(t *testing.T) {
 	test := newConsensusTest()
 
 	totalNodes := 15
-	cfg := config.Config{
-		N:               totalNodes,
-		WakeupDelta:     time.Second,
-		RoundDuration:   time.Second,
-		ExpectedLeaders: 5,
-		LimitIterations: 1000,
-		LimitConcurrent: 100,
-		Hdist:           20,
-	}
+	cfg := config.Config{N: totalNodes, WakeupDelta: time.Second, RoundDuration: time.Second, ExpectedLeaders: 5, LimitIterations: 1000, LimitConcurrent: 100, Hdist: 20}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -349,12 +340,7 @@ func TestAllDifferentSet(t *testing.T) {
 	test.initialSets[6] = NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{8})
 	test.initialSets[7] = NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{9})
 	test.initialSets[8] = NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{10})
-	test.initialSets[9] = NewSetFromValues(
-		types.ProposalID{1},
-		types.ProposalID{2},
-		types.ProposalID{3},
-		types.ProposalID{4},
-	)
+	test.initialSets[9] = NewSetFromValues(types.ProposalID{1}, types.ProposalID{2}, types.ProposalID{3}, types.ProposalID{4})
 	test.honestSets = []*Set{base}
 	oracle := eligibility.New(logtest.New(t))
 	i := 0

@@ -7,7 +7,6 @@ import (
 	"github.com/spacemeshos/post/config"
 	"github.com/spacemeshos/post/shared"
 	"github.com/spacemeshos/post/verifying"
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/spacemeshos/go-spacemesh/common/types"
@@ -38,22 +37,17 @@ type postVerifierWorker struct {
 
 type postVerifier struct {
 	*verifying.ProofVerifier
-	logger *zap.Logger
+	logger log.Log
 	cfg    config.Config
 }
 
-func (v *postVerifier) Verify(
-	ctx context.Context,
-	p *shared.Proof,
-	m *shared.ProofMetadata,
-	opts ...verifying.OptionFunc,
-) error {
-	v.logger.Debug("verifying post", zap.Stringer("proof_node_id", types.BytesToNodeID(m.NodeId)))
-	return v.ProofVerifier.Verify(p, m, v.cfg, v.logger, opts...)
+func (v *postVerifier) Verify(ctx context.Context, p *shared.Proof, m *shared.ProofMetadata, opts ...verifying.OptionFunc) error {
+	v.logger.WithContext(ctx).With().Debug("verifying post", log.FieldNamed("proof_node_id", types.BytesToNodeID(m.NodeId)))
+	return v.ProofVerifier.Verify(p, m, v.cfg, v.logger.Zap(), opts...)
 }
 
 // NewPostVerifier creates a new post verifier.
-func NewPostVerifier(cfg PostConfig, logger *zap.Logger, opts ...verifying.OptionFunc) (PostVerifier, error) {
+func NewPostVerifier(cfg PostConfig, logger log.Log, opts ...verifying.OptionFunc) (PostVerifier, error) {
 	verifier, err := verifying.NewProofVerifier(opts...)
 	if err != nil {
 		return nil, err
@@ -105,12 +99,7 @@ func NewOffloadingPostVerifier(verifiers []PostVerifier, logger log.Log) *Offloa
 	return v
 }
 
-func (v *OffloadingPostVerifier) Verify(
-	ctx context.Context,
-	p *shared.Proof,
-	m *shared.ProofMetadata,
-	opts ...verifying.OptionFunc,
-) error {
+func (v *OffloadingPostVerifier) Verify(ctx context.Context, p *shared.Proof, m *shared.ProofMetadata, opts ...verifying.OptionFunc) error {
 	job := &verifyPostJob{
 		proof:    p,
 		metadata: m,

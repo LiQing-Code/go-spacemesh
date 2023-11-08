@@ -19,12 +19,7 @@ const (
 
 func BuildPreRoundMsg(sig *signing.EdSigner, s *Set, roleProof types.VrfSignature) *Message {
 	builder := newMessageBuilder()
-	builder.SetType(pre).
-		SetLayer(instanceID1).
-		SetRoundCounter(preRound).
-		SetCommittedRound(ki).
-		SetValues(s).
-		SetRoleProof(roleProof)
+	builder.SetType(pre).SetLayer(instanceID1).SetRoundCounter(preRound).SetCommittedRound(ki).SetValues(s).SetRoleProof(roleProof)
 	builder.SetEligibilityCount(1)
 	m := builder.Sign(sig).Build()
 	m.signedHash = types.BytesToHash(m.InnerMessage.HashBytes())

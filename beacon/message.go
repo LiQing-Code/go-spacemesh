@@ -50,11 +50,9 @@ func ProposalFromVrf(vrf types.VrfSignature) Proposal {
 
 // FirstVotingMessageBody is FirstVotingMessage without a signature.
 type FirstVotingMessageBody struct {
-	EpochID types.EpochID
-	// number of proposals is expected to be under 100, 1000 is a safe upper bound
-	ValidProposals []Proposal `scale:"max=1000"`
-	// number of proposals is expected to be under 100, 1000 is a safe upper bound
-	PotentiallyValidProposals []Proposal `scale:"max=1000"`
+	EpochID                   types.EpochID
+	ValidProposals            []Proposal `scale:"max=1000"` // number of proposals is expected to be under 100, 1000 is a safe upper bound
+	PotentiallyValidProposals []Proposal `scale:"max=1000"` // number of proposals is expected to be under 100, 1000 is a safe upper bound
 }
 
 // FirstVotingMessage is a message type which is used when sending first voting messages.

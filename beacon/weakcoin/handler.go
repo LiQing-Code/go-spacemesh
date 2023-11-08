@@ -35,11 +35,7 @@ func (wc *WeakCoin) HandleProposal(ctx context.Context, peer p2p.Peer, msg []byt
 		}
 		return err
 	}
-	metrics.ReportMessageLatency(
-		pubsub.BeaconProtocol,
-		pubsub.BeaconWeakCoinProtocol,
-		time.Since(wc.msgTime.WeakCoinProposalSendTime(message.Epoch, message.Round)),
-	)
+	metrics.ReportMessageLatency(pubsub.BeaconProtocol, pubsub.BeaconWeakCoinProtocol, time.Since(wc.msgTime.WeakCoinProposalSendTime(message.Epoch, message.Round)))
 	return nil
 }
 

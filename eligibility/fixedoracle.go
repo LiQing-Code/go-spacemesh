@@ -11,7 +11,6 @@ import (
 	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/hash"
 	"github.com/spacemeshos/go-spacemesh/log"
-	"github.com/spacemeshos/go-spacemesh/signing"
 )
 
 // FixedRolacle is an eligibility simulator with pre-determined honest and faulty participants.
@@ -36,11 +35,7 @@ func New(logger log.Log) *FixedRolacle {
 }
 
 // IsIdentityActiveOnConsensusView is use to satisfy the API, currently always returns true.
-func (fo *FixedRolacle) IsIdentityActiveOnConsensusView(
-	ctx context.Context,
-	edID types.NodeID,
-	layer types.LayerID,
-) (bool, error) {
+func (fo *FixedRolacle) IsIdentityActiveOnConsensusView(ctx context.Context, edID types.NodeID, layer types.LayerID) (bool, error) {
 	return true, nil
 }
 
@@ -187,27 +182,12 @@ func hashLayerAndRound(logger log.Log, instanceID types.LayerID, round uint32) t
 }
 
 // Validate is required to conform to the Rolacle interface, but should never be called.
-func (fo *FixedRolacle) Validate(
-	context.Context,
-	types.LayerID,
-	uint32,
-	int,
-	types.NodeID,
-	types.VrfSignature,
-	uint16,
-) (bool, error) {
+func (fo *FixedRolacle) Validate(context.Context, types.LayerID, uint32, int, types.NodeID, types.VrfSignature, uint16) (bool, error) {
 	panic("implement me!")
 }
 
 // CalcEligibility returns 1 if the miner is eligible in given layer, and 0 otherwise.
-func (fo *FixedRolacle) CalcEligibility(
-	ctx context.Context,
-	layer types.LayerID,
-	round uint32,
-	committeeSize int,
-	id types.NodeID,
-	sig types.VrfSignature,
-) (uint16, error) {
+func (fo *FixedRolacle) CalcEligibility(ctx context.Context, layer types.LayerID, round uint32, committeeSize int, id types.NodeID, sig types.VrfSignature) (uint16, error) {
 	eligible, err := fo.eligible(ctx, layer, round, committeeSize, id, sig)
 	if eligible {
 		return 1, nil
@@ -216,14 +196,7 @@ func (fo *FixedRolacle) CalcEligibility(
 }
 
 // eligible returns whether the specific NodeID is eligible for layer in round and committee size.
-func (fo *FixedRolacle) eligible(
-	ctx context.Context,
-	layer types.LayerID,
-	round uint32,
-	committeeSize int,
-	id types.NodeID,
-	sig types.VrfSignature,
-) (bool, error) {
+func (fo *FixedRolacle) eligible(ctx context.Context, layer types.LayerID, round uint32, committeeSize int, id types.NodeID, sig types.VrfSignature) (bool, error) {
 	fo.mapRW.RLock()
 	total := len(fo.honest) + len(fo.faulty) // safe since len >= 0
 	fo.mapRW.RUnlock()
@@ -253,12 +226,7 @@ func (fo *FixedRolacle) eligible(
 }
 
 // Proof generates a proof for the round. used to satisfy interface.
-func (fo *FixedRolacle) Proof(
-	ctx context.Context,
-	_ *signing.VRFSigner,
-	layer types.LayerID,
-	round uint32,
-) (types.VrfSignature, error) {
+func (fo *FixedRolacle) Proof(ctx context.Context, layer types.LayerID, round uint32) (types.VrfSignature, error) {
 	kInBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(kInBytes, round)
 	h := hash.New()

@@ -51,17 +51,7 @@ func (mcp *mockConsensusProcess) SetInbox(_ any) {
 
 var _ Consensus = (*mockConsensusProcess)(nil)
 
-func newMockConsensusProcess(
-	_ config.Config,
-	instanceID types.LayerID,
-	s *Set,
-	_ Rolacle,
-	_ *signing.EdSigner,
-	_ pubsub.Publisher,
-	outputChan chan report,
-	wcChan chan wcReport,
-	started chan struct{},
-) *mockConsensusProcess {
+func newMockConsensusProcess(_ config.Config, instanceID types.LayerID, s *Set, _ Rolacle, _ *signing.EdSigner, _ pubsub.Publisher, outputChan chan report, wcChan chan wcReport, started chan struct{}) *mockConsensusProcess {
 	mcp := new(mockConsensusProcess)
 	mcp.started = started
 	mcp.id = instanceID
@@ -133,21 +123,17 @@ func TestHare_New(t *testing.T) {
 	signer, err := signing.NewEdSigner()
 	require.NoError(t, err)
 
+	edVerifier, err := signing.NewEdVerifier()
+	require.NoError(t, err)
+
 	logger := logtest.New(t).WithName(t.Name())
-	cfg := config.Config{
-		N:               10,
-		RoundDuration:   2 * time.Second,
-		ExpectedLeaders: 5,
-		LimitIterations: 1000,
-		LimitConcurrent: 1000,
-		Hdist:           20,
-	}
+	cfg := config.Config{N: 10, RoundDuration: 2 * time.Second, ExpectedLeaders: 5, LimitIterations: 1000, LimitConcurrent: 1000, Hdist: 20}
 	h := New(
 		datastore.NewCachedDB(sql.InMemory(), logtest.New(t)),
 		cfg,
 		noopPubSub(t),
 		signer,
-		signing.NewEdVerifier(),
+		edVerifier,
 		signer.NodeID(),
 		make(chan LayerOutput, 1),
 		smocks.NewMockSyncStateProvider(ctrl), smocks.NewMockBeaconGetter(ctrl),
@@ -332,18 +318,7 @@ func TestHare_onTick(t *testing.T) {
 	createdChan := make(chan struct{}, 1)
 	startedChan := make(chan struct{}, 1)
 	var nmcp *mockConsensusProcess
-	h.factory = func(
-		_ context.Context,
-		cfg config.Config,
-		instanceId types.LayerID,
-		s *Set,
-		oracle Rolacle,
-		_ *EligibilityTracker,
-		sig *signing.EdSigner,
-		p2p pubsub.Publisher,
-		comm communication,
-		_ RoundClock,
-	) Consensus {
+	h.factory = func(ctx context.Context, cfg config.Config, instanceId types.LayerID, s *Set, oracle Rolacle, et *EligibilityTracker, sig *signing.EdSigner, p2p pubsub.Publisher, comm communication, clock RoundClock) Consensus {
 		nmcp = newMockConsensusProcess(cfg, instanceId, s, oracle, sig, p2p, comm.report, comm.wc, startedChan)
 		close(createdChan)
 		return nmcp
@@ -359,22 +334,15 @@ func TestHare_onTick(t *testing.T) {
 		randomProposal(lyrID, beacon),
 	}
 	for _, p := range pList {
-		mockMesh.EXPECT().
-			GetAtxHeader(p.AtxID).
-			Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1, NodeID: p.SmesherID}, nil)
+		mockMesh.EXPECT().GetAtxHeader(p.AtxID).Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1, NodeID: p.SmesherID}, nil)
 	}
-	mockMesh.EXPECT().
-		GetEpochAtx(lyrID.GetEpoch()-1, h.nodeID).
-		Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil)
+	mockMesh.EXPECT().GetEpochAtx(lyrID.GetEpoch()-1, h.nodeID).Return(&types.ActivationTxHeader{BaseTickHeight: 11, TickCount: 1}, nil)
 	mockMesh.EXPECT().Proposals(lyrID).Return(pList, nil)
 	h.mockCoin.EXPECT().Set(lyrID, gomock.Any())
 
 	mockBeacons := smocks.NewMockBeaconGetter(gomock.NewController(t))
 	h.beacons = mockBeacons
-	h.mockRoracle.EXPECT().
-		IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), types.GetEffectiveGenesis()).
-		Return(true, nil).
-		AnyTimes()
+	h.mockRoracle.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), types.GetEffectiveGenesis()).Return(true, nil).AnyTimes()
 	h.mockRoracle.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), lyrID).Return(true, nil).Times(1)
 	mockBeacons.EXPECT().GetBeacon(lyrID.GetEpoch()).Return(beacon, nil).Times(1)
 
@@ -432,17 +400,7 @@ func TestHare_onTick_notMining(t *testing.T) {
 	startedChan := make(chan struct{}, 1)
 	wcSaved := make(chan struct{}, 1)
 	var nmcp *mockConsensusProcess
-	h.factory = func(
-		_ context.Context,
-		cfg config.Config,
-		instanceId types.LayerID,
-		s *Set, oracle Rolacle,
-		_ *EligibilityTracker,
-		sig *signing.EdSigner,
-		p2p pubsub.Publisher,
-		comm communication,
-		_ RoundClock,
-	) Consensus {
+	h.factory = func(ctx context.Context, cfg config.Config, instanceId types.LayerID, s *Set, oracle Rolacle, et *EligibilityTracker, sig *signing.EdSigner, p2p pubsub.Publisher, comm communication, clock RoundClock) Consensus {
 		nmcp = newMockConsensusProcess(cfg, instanceId, s, oracle, sig, p2p, comm.report, comm.wc, startedChan)
 		close(createdChan)
 		return nmcp
@@ -467,10 +425,7 @@ func TestHare_onTick_notMining(t *testing.T) {
 
 	mockBeacons := smocks.NewMockBeaconGetter(gomock.NewController(t))
 	h.beacons = mockBeacons
-	h.mockRoracle.EXPECT().
-		IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), lyrID).
-		Return(false, nil).
-		Times(1)
+	h.mockRoracle.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), lyrID).Return(false, nil).Times(1)
 	mockBeacons.EXPECT().GetBeacon(lyrID.GetEpoch()).Return(beacon, nil).Times(1)
 
 	var wg sync.WaitGroup
@@ -497,10 +452,7 @@ func TestHare_onTick_NoBeacon(t *testing.T) {
 	lyr := types.LayerID(199)
 
 	h := createTestHare(t, newMockMesh(t), config.DefaultConfig(), newMockClock(), noopPubSub(t), t.Name())
-	h.mockRoracle.EXPECT().
-		IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), lyr).
-		Return(true, nil).
-		MaxTimes(1)
+	h.mockRoracle.EXPECT().IsIdentityActiveOnConsensusView(gomock.Any(), gomock.Any(), lyr).Return(true, nil).MaxTimes(1)
 	mockBeacons := smocks.NewMockBeaconGetter(gomock.NewController(t))
 	h.beacons = mockBeacons
 	mockBeacons.EXPECT().GetBeacon(lyr.GetEpoch()).Return(types.EmptyBeacon, errors.New("whatever")).Times(1)
@@ -624,14 +576,11 @@ func TestHare_goodProposals(t *testing.T) {
 				} else if tc.atxids[i] != nil {
 					p.AtxID = *tc.atxids[i]
 				} else {
-					mockMesh.EXPECT().GetAtxHeader(p.AtxID).
-						Return(&types.ActivationTxHeader{BaseTickHeight: tc.baseHeights[i], TickCount: 1}, nil)
+					mockMesh.EXPECT().GetAtxHeader(p.AtxID).Return(&types.ActivationTxHeader{BaseTickHeight: tc.baseHeights[i], TickCount: 1}, nil)
 				}
 			}
 			nodeID := types.NodeID{1, 2, 3}
-			mockMesh.EXPECT().
-				GetEpochAtx(lyrID.GetEpoch()-1, nodeID).
-				Return(&types.ActivationTxHeader{BaseTickHeight: nodeBaseHeight, TickCount: 1}, nil)
+			mockMesh.EXPECT().GetEpochAtx(lyrID.GetEpoch()-1, nodeID).Return(&types.ActivationTxHeader{BaseTickHeight: nodeBaseHeight, TickCount: 1}, nil)
 			mockMesh.EXPECT().Proposals(lyrID).Return(pList, nil)
 
 			expected := make([]types.ProposalID, 0, len(tc.expected))

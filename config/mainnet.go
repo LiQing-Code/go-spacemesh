@@ -15,7 +15,6 @@ import (
 	"github.com/spacemeshos/go-spacemesh/beacon"
 	"github.com/spacemeshos/go-spacemesh/bootstrap"
 	"github.com/spacemeshos/go-spacemesh/checkpoint"
-	"github.com/spacemeshos/go-spacemesh/common/types"
 	"github.com/spacemeshos/go-spacemesh/datastore"
 	"github.com/spacemeshos/go-spacemesh/fetch"
 	hareConfig "github.com/spacemeshos/go-spacemesh/hare/config"
@@ -29,8 +28,7 @@ import (
 
 func MainnetConfig() Config {
 	var postPowDifficulty activation.PowDifficulty
-	difficulty := []byte("000dfb23b0979b4b000000000000000000000000000000000000000000000000")
-	if err := postPowDifficulty.UnmarshalText(difficulty); err != nil {
+	if err := postPowDifficulty.UnmarshalText([]byte("000dfb23b0979b4b000000000000000000000000000000000000000000000000")); err != nil {
 		panic(err)
 	}
 	p2pconfig := p2p.DefaultConfig()
@@ -61,7 +59,7 @@ func MainnetConfig() Config {
 	hare3conf := hare3.DefaultConfig()
 	hare3conf.Committee = 400
 	hare3conf.Enable = true
-	hare3conf.EnableLayer = 33101
+	hare3conf.EnableLayer = 35117
 	return Config{
 		BaseConfig: BaseConfig{
 			DataDirParent:         defaultDataDir,
@@ -69,7 +67,6 @@ func MainnetConfig() Config {
 			MetricsPort:           1010,
 			DatabaseConnections:   16,
 			DatabasePruneInterval: 30 * time.Minute,
-			PruneActivesetsFrom:   8,
 			NetworkHRP:            "sm",
 
 			LayerDuration:  5 * time.Minute,
@@ -103,12 +100,9 @@ func MainnetConfig() Config {
 			WindowSize:               10000,
 			MaxExceptions:            1000,
 			BadBeaconVoteDelayLayers: 4032,
-			MinimalActiveSetWeight: []types.EpochMinimalActiveWeight{
-				{Weight: 1_000_000},
-				// generated using ./cmd/activeset for publish epoch 6
-				// it will be used starting from epoch 8, because we will only release it in 7th
-				{Epoch: 8, Weight: 7_879_129_244},
-			},
+			// 1000 - is assumed minimal number of units
+			// 5000 - half of the expected poet ticks
+			MinimalActiveSetWeight: 1000 * 5000,
 		},
 		HARE: hareConfig.Config{
 			Disable:         hare3conf.EnableLayer,
@@ -159,13 +153,12 @@ func MainnetConfig() Config {
 			DataDir:  os.TempDir(),
 			Interval: 30 * time.Second,
 		},
-		P2P:         p2pconfig,
-		API:         grpcserver.DefaultConfig(),
-		TIME:        timeConfig.DefaultConfig(),
-		SMESHING:    smeshing,
-		POSTService: activation.DefaultPostServiceConfig(),
-		FETCH:       fetch.DefaultConfig(),
-		LOGGING:     logging,
+		P2P:      p2pconfig,
+		API:      grpcserver.DefaultConfig(),
+		TIME:     timeConfig.DefaultConfig(),
+		SMESHING: smeshing,
+		FETCH:    fetch.DefaultConfig(),
+		LOGGING:  logging,
 		Sync: syncer.Config{
 			Interval:                 time.Minute,
 			EpochEndFraction:         0.8,

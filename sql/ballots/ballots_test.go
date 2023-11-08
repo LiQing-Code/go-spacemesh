@@ -129,12 +129,7 @@ func TestLatest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ballot.Layer, latest)
 
-	newBallot := types.NewExistingBallot(
-		types.BallotID{2},
-		types.EmptyEdSignature,
-		types.EmptyNodeID,
-		types.LayerID(12),
-	)
+	newBallot := types.NewExistingBallot(types.BallotID{2}, types.EmptyEdSignature, types.EmptyNodeID, types.LayerID(12))
 	require.NoError(t, Add(db, &newBallot))
 	latest, err = LatestLayer(db)
 	require.NoError(t, err)

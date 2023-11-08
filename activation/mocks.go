@@ -14,6 +14,7 @@ import (
 	time "time"
 
 	types "github.com/spacemeshos/go-spacemesh/common/types"
+	proving "github.com/spacemeshos/post/proving"
 	shared "github.com/spacemeshos/post/shared"
 	verifying "github.com/spacemeshos/post/verifying"
 	gomock "go.uber.org/mock/gomock"
@@ -748,7 +749,7 @@ func (c *nipostBuilderDataDirCall) DoAndReturn(f func() string) *nipostBuilderDa
 }
 
 // UpdatePoETProvers mocks base method.
-func (m *MocknipostBuilder) UpdatePoETProvers(arg0 []poetClient) {
+func (m *MocknipostBuilder) UpdatePoETProvers(arg0 []PoetProvingServiceClient) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "UpdatePoETProvers", arg0)
 }
@@ -772,13 +773,13 @@ func (c *nipostBuilderUpdatePoETProversCall) Return() *nipostBuilderUpdatePoETPr
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *nipostBuilderUpdatePoETProversCall) Do(f func([]poetClient)) *nipostBuilderUpdatePoETProversCall {
+func (c *nipostBuilderUpdatePoETProversCall) Do(f func([]PoetProvingServiceClient)) *nipostBuilderUpdatePoETProversCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *nipostBuilderUpdatePoETProversCall) DoAndReturn(f func([]poetClient)) *nipostBuilderUpdatePoETProversCall {
+func (c *nipostBuilderUpdatePoETProversCall) DoAndReturn(f func([]PoetProvingServiceClient)) *nipostBuilderUpdatePoETProversCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -807,10 +808,10 @@ func (m *Mocksyncer) EXPECT() *MocksyncerMockRecorder {
 }
 
 // RegisterForATXSynced mocks base method.
-func (m *Mocksyncer) RegisterForATXSynced() <-chan struct{} {
+func (m *Mocksyncer) RegisterForATXSynced() chan struct{} {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RegisterForATXSynced")
-	ret0, _ := ret[0].(<-chan struct{})
+	ret0, _ := ret[0].(chan struct{})
 	return ret0
 }
 
@@ -827,19 +828,19 @@ type syncerRegisterForATXSyncedCall struct {
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *syncerRegisterForATXSyncedCall) Return(arg0 <-chan struct{}) *syncerRegisterForATXSyncedCall {
+func (c *syncerRegisterForATXSyncedCall) Return(arg0 chan struct{}) *syncerRegisterForATXSyncedCall {
 	c.Call = c.Call.Return(arg0)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *syncerRegisterForATXSyncedCall) Do(f func() <-chan struct{}) *syncerRegisterForATXSyncedCall {
+func (c *syncerRegisterForATXSyncedCall) Do(f func() chan struct{}) *syncerRegisterForATXSyncedCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *syncerRegisterForATXSyncedCall) DoAndReturn(f func() <-chan struct{}) *syncerRegisterForATXSyncedCall {
+func (c *syncerRegisterForATXSyncedCall) DoAndReturn(f func() chan struct{}) *syncerRegisterForATXSyncedCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -929,18 +930,217 @@ func (m *MockpostSetupProvider) EXPECT() *MockpostSetupProviderMockRecorder {
 	return m.recorder
 }
 
-// PrepareInitializer mocks base method.
-func (m *MockpostSetupProvider) PrepareInitializer(opts PostSetupOpts) error {
+// Benchmark mocks base method.
+func (m *MockpostSetupProvider) Benchmark(p PostSetupProvider) (int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PrepareInitializer", opts)
+	ret := m.ctrl.Call(m, "Benchmark", p)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Benchmark indicates an expected call of Benchmark.
+func (mr *MockpostSetupProviderMockRecorder) Benchmark(p any) *postSetupProviderBenchmarkCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Benchmark", reflect.TypeOf((*MockpostSetupProvider)(nil).Benchmark), p)
+	return &postSetupProviderBenchmarkCall{Call: call}
+}
+
+// postSetupProviderBenchmarkCall wrap *gomock.Call
+type postSetupProviderBenchmarkCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderBenchmarkCall) Return(arg0 int, arg1 error) *postSetupProviderBenchmarkCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderBenchmarkCall) Do(f func(PostSetupProvider) (int, error)) *postSetupProviderBenchmarkCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderBenchmarkCall) DoAndReturn(f func(PostSetupProvider) (int, error)) *postSetupProviderBenchmarkCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// CommitmentAtx mocks base method.
+func (m *MockpostSetupProvider) CommitmentAtx() (types.ATXID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CommitmentAtx")
+	ret0, _ := ret[0].(types.ATXID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CommitmentAtx indicates an expected call of CommitmentAtx.
+func (mr *MockpostSetupProviderMockRecorder) CommitmentAtx() *postSetupProviderCommitmentAtxCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommitmentAtx", reflect.TypeOf((*MockpostSetupProvider)(nil).CommitmentAtx))
+	return &postSetupProviderCommitmentAtxCall{Call: call}
+}
+
+// postSetupProviderCommitmentAtxCall wrap *gomock.Call
+type postSetupProviderCommitmentAtxCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderCommitmentAtxCall) Return(arg0 types.ATXID, arg1 error) *postSetupProviderCommitmentAtxCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderCommitmentAtxCall) Do(f func() (types.ATXID, error)) *postSetupProviderCommitmentAtxCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderCommitmentAtxCall) DoAndReturn(f func() (types.ATXID, error)) *postSetupProviderCommitmentAtxCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// Config mocks base method.
+func (m *MockpostSetupProvider) Config() PostConfig {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Config")
+	ret0, _ := ret[0].(PostConfig)
+	return ret0
+}
+
+// Config indicates an expected call of Config.
+func (mr *MockpostSetupProviderMockRecorder) Config() *postSetupProviderConfigCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Config", reflect.TypeOf((*MockpostSetupProvider)(nil).Config))
+	return &postSetupProviderConfigCall{Call: call}
+}
+
+// postSetupProviderConfigCall wrap *gomock.Call
+type postSetupProviderConfigCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderConfigCall) Return(arg0 PostConfig) *postSetupProviderConfigCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderConfigCall) Do(f func() PostConfig) *postSetupProviderConfigCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderConfigCall) DoAndReturn(f func() PostConfig) *postSetupProviderConfigCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// GenerateProof mocks base method.
+func (m *MockpostSetupProvider) GenerateProof(ctx context.Context, challenge []byte, options ...proving.OptionFunc) (*types.Post, *types.PostMetadata, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, challenge}
+	for _, a := range options {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GenerateProof", varargs...)
+	ret0, _ := ret[0].(*types.Post)
+	ret1, _ := ret[1].(*types.PostMetadata)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GenerateProof indicates an expected call of GenerateProof.
+func (mr *MockpostSetupProviderMockRecorder) GenerateProof(ctx, challenge any, options ...any) *postSetupProviderGenerateProofCall {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, challenge}, options...)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateProof", reflect.TypeOf((*MockpostSetupProvider)(nil).GenerateProof), varargs...)
+	return &postSetupProviderGenerateProofCall{Call: call}
+}
+
+// postSetupProviderGenerateProofCall wrap *gomock.Call
+type postSetupProviderGenerateProofCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderGenerateProofCall) Return(arg0 *types.Post, arg1 *types.PostMetadata, arg2 error) *postSetupProviderGenerateProofCall {
+	c.Call = c.Call.Return(arg0, arg1, arg2)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderGenerateProofCall) Do(f func(context.Context, []byte, ...proving.OptionFunc) (*types.Post, *types.PostMetadata, error)) *postSetupProviderGenerateProofCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderGenerateProofCall) DoAndReturn(f func(context.Context, []byte, ...proving.OptionFunc) (*types.Post, *types.PostMetadata, error)) *postSetupProviderGenerateProofCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// LastOpts mocks base method.
+func (m *MockpostSetupProvider) LastOpts() *PostSetupOpts {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LastOpts")
+	ret0, _ := ret[0].(*PostSetupOpts)
+	return ret0
+}
+
+// LastOpts indicates an expected call of LastOpts.
+func (mr *MockpostSetupProviderMockRecorder) LastOpts() *postSetupProviderLastOptsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LastOpts", reflect.TypeOf((*MockpostSetupProvider)(nil).LastOpts))
+	return &postSetupProviderLastOptsCall{Call: call}
+}
+
+// postSetupProviderLastOptsCall wrap *gomock.Call
+type postSetupProviderLastOptsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderLastOptsCall) Return(arg0 *PostSetupOpts) *postSetupProviderLastOptsCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderLastOptsCall) Do(f func() *PostSetupOpts) *postSetupProviderLastOptsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderLastOptsCall) DoAndReturn(f func() *PostSetupOpts) *postSetupProviderLastOptsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// PrepareInitializer mocks base method.
+func (m *MockpostSetupProvider) PrepareInitializer(ctx context.Context, opts PostSetupOpts) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PrepareInitializer", ctx, opts)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PrepareInitializer indicates an expected call of PrepareInitializer.
-func (mr *MockpostSetupProviderMockRecorder) PrepareInitializer(opts any) *postSetupProviderPrepareInitializerCall {
+func (mr *MockpostSetupProviderMockRecorder) PrepareInitializer(ctx, opts any) *postSetupProviderPrepareInitializerCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareInitializer", reflect.TypeOf((*MockpostSetupProvider)(nil).PrepareInitializer), opts)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareInitializer", reflect.TypeOf((*MockpostSetupProvider)(nil).PrepareInitializer), ctx, opts)
 	return &postSetupProviderPrepareInitializerCall{Call: call}
 }
 
@@ -956,13 +1156,52 @@ func (c *postSetupProviderPrepareInitializerCall) Return(arg0 error) *postSetupP
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *postSetupProviderPrepareInitializerCall) Do(f func(PostSetupOpts) error) *postSetupProviderPrepareInitializerCall {
+func (c *postSetupProviderPrepareInitializerCall) Do(f func(context.Context, PostSetupOpts) error) *postSetupProviderPrepareInitializerCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *postSetupProviderPrepareInitializerCall) DoAndReturn(f func(PostSetupOpts) error) *postSetupProviderPrepareInitializerCall {
+func (c *postSetupProviderPrepareInitializerCall) DoAndReturn(f func(context.Context, PostSetupOpts) error) *postSetupProviderPrepareInitializerCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// Providers mocks base method.
+func (m *MockpostSetupProvider) Providers() ([]PostSetupProvider, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Providers")
+	ret0, _ := ret[0].([]PostSetupProvider)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Providers indicates an expected call of Providers.
+func (mr *MockpostSetupProviderMockRecorder) Providers() *postSetupProviderProvidersCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Providers", reflect.TypeOf((*MockpostSetupProvider)(nil).Providers))
+	return &postSetupProviderProvidersCall{Call: call}
+}
+
+// postSetupProviderProvidersCall wrap *gomock.Call
+type postSetupProviderProvidersCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderProvidersCall) Return(arg0 []PostSetupProvider, arg1 error) *postSetupProviderProvidersCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderProvidersCall) Do(f func() ([]PostSetupProvider, error)) *postSetupProviderProvidersCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderProvidersCall) DoAndReturn(f func() ([]PostSetupProvider, error)) *postSetupProviderProvidersCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -1077,6 +1316,45 @@ func (c *postSetupProviderStatusCall) Do(f func() *PostSetupStatus) *postSetupPr
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *postSetupProviderStatusCall) DoAndReturn(f func() *PostSetupStatus) *postSetupProviderStatusCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// VRFNonce mocks base method.
+func (m *MockpostSetupProvider) VRFNonce() (*types.VRFPostIndex, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VRFNonce")
+	ret0, _ := ret[0].(*types.VRFPostIndex)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// VRFNonce indicates an expected call of VRFNonce.
+func (mr *MockpostSetupProviderMockRecorder) VRFNonce() *postSetupProviderVRFNonceCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VRFNonce", reflect.TypeOf((*MockpostSetupProvider)(nil).VRFNonce))
+	return &postSetupProviderVRFNonceCall{Call: call}
+}
+
+// postSetupProviderVRFNonceCall wrap *gomock.Call
+type postSetupProviderVRFNonceCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *postSetupProviderVRFNonceCall) Return(arg0 *types.VRFPostIndex, arg1 error) *postSetupProviderVRFNonceCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *postSetupProviderVRFNonceCall) Do(f func() (*types.VRFPostIndex, error)) *postSetupProviderVRFNonceCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *postSetupProviderVRFNonceCall) DoAndReturn(f func() (*types.VRFPostIndex, error)) *postSetupProviderVRFNonceCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -1255,17 +1533,17 @@ func (c *SmeshingProviderSmeshingCall) DoAndReturn(f func() bool) *SmeshingProvi
 }
 
 // StartSmeshing mocks base method.
-func (m *MockSmeshingProvider) StartSmeshing(arg0 types.Address) error {
+func (m *MockSmeshingProvider) StartSmeshing(arg0 types.Address, arg1 PostSetupOpts) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartSmeshing", arg0)
+	ret := m.ctrl.Call(m, "StartSmeshing", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // StartSmeshing indicates an expected call of StartSmeshing.
-func (mr *MockSmeshingProviderMockRecorder) StartSmeshing(arg0 any) *SmeshingProviderStartSmeshingCall {
+func (mr *MockSmeshingProviderMockRecorder) StartSmeshing(arg0, arg1 any) *SmeshingProviderStartSmeshingCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartSmeshing", reflect.TypeOf((*MockSmeshingProvider)(nil).StartSmeshing), arg0)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartSmeshing", reflect.TypeOf((*MockSmeshingProvider)(nil).StartSmeshing), arg0, arg1)
 	return &SmeshingProviderStartSmeshingCall{Call: call}
 }
 
@@ -1281,13 +1559,13 @@ func (c *SmeshingProviderStartSmeshingCall) Return(arg0 error) *SmeshingProvider
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *SmeshingProviderStartSmeshingCall) Do(f func(types.Address) error) *SmeshingProviderStartSmeshingCall {
+func (c *SmeshingProviderStartSmeshingCall) Do(f func(types.Address, PostSetupOpts) error) *SmeshingProviderStartSmeshingCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *SmeshingProviderStartSmeshingCall) DoAndReturn(f func(types.Address) error) *SmeshingProviderStartSmeshingCall {
+func (c *SmeshingProviderStartSmeshingCall) DoAndReturn(f func(types.Address, PostSetupOpts) error) *SmeshingProviderStartSmeshingCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -1364,489 +1642,6 @@ func (c *SmeshingProviderUpdatePoETServersCall) Do(f func(context.Context, []str
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *SmeshingProviderUpdatePoETServersCall) DoAndReturn(f func(context.Context, []string) error) *SmeshingProviderUpdatePoETServersCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// MockpoetClient is a mock of poetClient interface.
-type MockpoetClient struct {
-	ctrl     *gomock.Controller
-	recorder *MockpoetClientMockRecorder
-}
-
-// MockpoetClientMockRecorder is the mock recorder for MockpoetClient.
-type MockpoetClientMockRecorder struct {
-	mock *MockpoetClient
-}
-
-// NewMockpoetClient creates a new mock instance.
-func NewMockpoetClient(ctrl *gomock.Controller) *MockpoetClient {
-	mock := &MockpoetClient{ctrl: ctrl}
-	mock.recorder = &MockpoetClientMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockpoetClient) EXPECT() *MockpoetClientMockRecorder {
-	return m.recorder
-}
-
-// Address mocks base method.
-func (m *MockpoetClient) Address() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Address")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// Address indicates an expected call of Address.
-func (mr *MockpoetClientMockRecorder) Address() *poetClientAddressCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Address", reflect.TypeOf((*MockpoetClient)(nil).Address))
-	return &poetClientAddressCall{Call: call}
-}
-
-// poetClientAddressCall wrap *gomock.Call
-type poetClientAddressCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetClientAddressCall) Return(arg0 string) *poetClientAddressCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetClientAddressCall) Do(f func() string) *poetClientAddressCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetClientAddressCall) DoAndReturn(f func() string) *poetClientAddressCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// PoetServiceID mocks base method.
-func (m *MockpoetClient) PoetServiceID(arg0 context.Context) (types.PoetServiceID, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PoetServiceID", arg0)
-	ret0, _ := ret[0].(types.PoetServiceID)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// PoetServiceID indicates an expected call of PoetServiceID.
-func (mr *MockpoetClientMockRecorder) PoetServiceID(arg0 any) *poetClientPoetServiceIDCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PoetServiceID", reflect.TypeOf((*MockpoetClient)(nil).PoetServiceID), arg0)
-	return &poetClientPoetServiceIDCall{Call: call}
-}
-
-// poetClientPoetServiceIDCall wrap *gomock.Call
-type poetClientPoetServiceIDCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetClientPoetServiceIDCall) Return(arg0 types.PoetServiceID, arg1 error) *poetClientPoetServiceIDCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetClientPoetServiceIDCall) Do(f func(context.Context) (types.PoetServiceID, error)) *poetClientPoetServiceIDCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetClientPoetServiceIDCall) DoAndReturn(f func(context.Context) (types.PoetServiceID, error)) *poetClientPoetServiceIDCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// PowParams mocks base method.
-func (m *MockpoetClient) PowParams(ctx context.Context) (*PoetPowParams, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PowParams", ctx)
-	ret0, _ := ret[0].(*PoetPowParams)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// PowParams indicates an expected call of PowParams.
-func (mr *MockpoetClientMockRecorder) PowParams(ctx any) *poetClientPowParamsCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PowParams", reflect.TypeOf((*MockpoetClient)(nil).PowParams), ctx)
-	return &poetClientPowParamsCall{Call: call}
-}
-
-// poetClientPowParamsCall wrap *gomock.Call
-type poetClientPowParamsCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetClientPowParamsCall) Return(arg0 *PoetPowParams, arg1 error) *poetClientPowParamsCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetClientPowParamsCall) Do(f func(context.Context) (*PoetPowParams, error)) *poetClientPowParamsCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetClientPowParamsCall) DoAndReturn(f func(context.Context) (*PoetPowParams, error)) *poetClientPowParamsCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// Proof mocks base method.
-func (m *MockpoetClient) Proof(ctx context.Context, roundID string) (*types.PoetProofMessage, []types.Member, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Proof", ctx, roundID)
-	ret0, _ := ret[0].(*types.PoetProofMessage)
-	ret1, _ := ret[1].([]types.Member)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// Proof indicates an expected call of Proof.
-func (mr *MockpoetClientMockRecorder) Proof(ctx, roundID any) *poetClientProofCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Proof", reflect.TypeOf((*MockpoetClient)(nil).Proof), ctx, roundID)
-	return &poetClientProofCall{Call: call}
-}
-
-// poetClientProofCall wrap *gomock.Call
-type poetClientProofCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetClientProofCall) Return(arg0 *types.PoetProofMessage, arg1 []types.Member, arg2 error) *poetClientProofCall {
-	c.Call = c.Call.Return(arg0, arg1, arg2)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetClientProofCall) Do(f func(context.Context, string) (*types.PoetProofMessage, []types.Member, error)) *poetClientProofCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetClientProofCall) DoAndReturn(f func(context.Context, string) (*types.PoetProofMessage, []types.Member, error)) *poetClientProofCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// Submit mocks base method.
-func (m *MockpoetClient) Submit(ctx context.Context, deadline time.Time, prefix, challenge []byte, signature types.EdSignature, nodeID types.NodeID, pow PoetPoW) (*types.PoetRound, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Submit", ctx, deadline, prefix, challenge, signature, nodeID, pow)
-	ret0, _ := ret[0].(*types.PoetRound)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Submit indicates an expected call of Submit.
-func (mr *MockpoetClientMockRecorder) Submit(ctx, deadline, prefix, challenge, signature, nodeID, pow any) *poetClientSubmitCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Submit", reflect.TypeOf((*MockpoetClient)(nil).Submit), ctx, deadline, prefix, challenge, signature, nodeID, pow)
-	return &poetClientSubmitCall{Call: call}
-}
-
-// poetClientSubmitCall wrap *gomock.Call
-type poetClientSubmitCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetClientSubmitCall) Return(arg0 *types.PoetRound, arg1 error) *poetClientSubmitCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetClientSubmitCall) Do(f func(context.Context, time.Time, []byte, []byte, types.EdSignature, types.NodeID, PoetPoW) (*types.PoetRound, error)) *poetClientSubmitCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetClientSubmitCall) DoAndReturn(f func(context.Context, time.Time, []byte, []byte, types.EdSignature, types.NodeID, PoetPoW) (*types.PoetRound, error)) *poetClientSubmitCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// MockpoetDbAPI is a mock of poetDbAPI interface.
-type MockpoetDbAPI struct {
-	ctrl     *gomock.Controller
-	recorder *MockpoetDbAPIMockRecorder
-}
-
-// MockpoetDbAPIMockRecorder is the mock recorder for MockpoetDbAPI.
-type MockpoetDbAPIMockRecorder struct {
-	mock *MockpoetDbAPI
-}
-
-// NewMockpoetDbAPI creates a new mock instance.
-func NewMockpoetDbAPI(ctrl *gomock.Controller) *MockpoetDbAPI {
-	mock := &MockpoetDbAPI{ctrl: ctrl}
-	mock.recorder = &MockpoetDbAPIMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockpoetDbAPI) EXPECT() *MockpoetDbAPIMockRecorder {
-	return m.recorder
-}
-
-// GetProof mocks base method.
-func (m *MockpoetDbAPI) GetProof(arg0 types.PoetProofRef) (*types.PoetProof, *types.Hash32, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProof", arg0)
-	ret0, _ := ret[0].(*types.PoetProof)
-	ret1, _ := ret[1].(*types.Hash32)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// GetProof indicates an expected call of GetProof.
-func (mr *MockpoetDbAPIMockRecorder) GetProof(arg0 any) *poetDbAPIGetProofCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProof", reflect.TypeOf((*MockpoetDbAPI)(nil).GetProof), arg0)
-	return &poetDbAPIGetProofCall{Call: call}
-}
-
-// poetDbAPIGetProofCall wrap *gomock.Call
-type poetDbAPIGetProofCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetDbAPIGetProofCall) Return(arg0 *types.PoetProof, arg1 *types.Hash32, arg2 error) *poetDbAPIGetProofCall {
-	c.Call = c.Call.Return(arg0, arg1, arg2)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetDbAPIGetProofCall) Do(f func(types.PoetProofRef) (*types.PoetProof, *types.Hash32, error)) *poetDbAPIGetProofCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetDbAPIGetProofCall) DoAndReturn(f func(types.PoetProofRef) (*types.PoetProof, *types.Hash32, error)) *poetDbAPIGetProofCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// ValidateAndStore mocks base method.
-func (m *MockpoetDbAPI) ValidateAndStore(ctx context.Context, proofMessage *types.PoetProofMessage) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ValidateAndStore", ctx, proofMessage)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// ValidateAndStore indicates an expected call of ValidateAndStore.
-func (mr *MockpoetDbAPIMockRecorder) ValidateAndStore(ctx, proofMessage any) *poetDbAPIValidateAndStoreCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateAndStore", reflect.TypeOf((*MockpoetDbAPI)(nil).ValidateAndStore), ctx, proofMessage)
-	return &poetDbAPIValidateAndStoreCall{Call: call}
-}
-
-// poetDbAPIValidateAndStoreCall wrap *gomock.Call
-type poetDbAPIValidateAndStoreCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *poetDbAPIValidateAndStoreCall) Return(arg0 error) *poetDbAPIValidateAndStoreCall {
-	c.Call = c.Call.Return(arg0)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *poetDbAPIValidateAndStoreCall) Do(f func(context.Context, *types.PoetProofMessage) error) *poetDbAPIValidateAndStoreCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *poetDbAPIValidateAndStoreCall) DoAndReturn(f func(context.Context, *types.PoetProofMessage) error) *poetDbAPIValidateAndStoreCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// MockpostService is a mock of postService interface.
-type MockpostService struct {
-	ctrl     *gomock.Controller
-	recorder *MockpostServiceMockRecorder
-}
-
-// MockpostServiceMockRecorder is the mock recorder for MockpostService.
-type MockpostServiceMockRecorder struct {
-	mock *MockpostService
-}
-
-// NewMockpostService creates a new mock instance.
-func NewMockpostService(ctrl *gomock.Controller) *MockpostService {
-	mock := &MockpostService{ctrl: ctrl}
-	mock.recorder = &MockpostServiceMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockpostService) EXPECT() *MockpostServiceMockRecorder {
-	return m.recorder
-}
-
-// Client mocks base method.
-func (m *MockpostService) Client(nodeId types.NodeID) (PostClient, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Client", nodeId)
-	ret0, _ := ret[0].(PostClient)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Client indicates an expected call of Client.
-func (mr *MockpostServiceMockRecorder) Client(nodeId any) *postServiceClientCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Client", reflect.TypeOf((*MockpostService)(nil).Client), nodeId)
-	return &postServiceClientCall{Call: call}
-}
-
-// postServiceClientCall wrap *gomock.Call
-type postServiceClientCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *postServiceClientCall) Return(arg0 PostClient, arg1 error) *postServiceClientCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *postServiceClientCall) Do(f func(types.NodeID) (PostClient, error)) *postServiceClientCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *postServiceClientCall) DoAndReturn(f func(types.NodeID) (PostClient, error)) *postServiceClientCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// MockPostClient is a mock of PostClient interface.
-type MockPostClient struct {
-	ctrl     *gomock.Controller
-	recorder *MockPostClientMockRecorder
-}
-
-// MockPostClientMockRecorder is the mock recorder for MockPostClient.
-type MockPostClientMockRecorder struct {
-	mock *MockPostClient
-}
-
-// NewMockPostClient creates a new mock instance.
-func NewMockPostClient(ctrl *gomock.Controller) *MockPostClient {
-	mock := &MockPostClient{ctrl: ctrl}
-	mock.recorder = &MockPostClientMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockPostClient) EXPECT() *MockPostClientMockRecorder {
-	return m.recorder
-}
-
-// Info mocks base method.
-func (m *MockPostClient) Info(ctx context.Context) (*types.PostInfo, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Info", ctx)
-	ret0, _ := ret[0].(*types.PostInfo)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Info indicates an expected call of Info.
-func (mr *MockPostClientMockRecorder) Info(ctx any) *PostClientInfoCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Info", reflect.TypeOf((*MockPostClient)(nil).Info), ctx)
-	return &PostClientInfoCall{Call: call}
-}
-
-// PostClientInfoCall wrap *gomock.Call
-type PostClientInfoCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *PostClientInfoCall) Return(arg0 *types.PostInfo, arg1 error) *PostClientInfoCall {
-	c.Call = c.Call.Return(arg0, arg1)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *PostClientInfoCall) Do(f func(context.Context) (*types.PostInfo, error)) *PostClientInfoCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *PostClientInfoCall) DoAndReturn(f func(context.Context) (*types.PostInfo, error)) *PostClientInfoCall {
-	c.Call = c.Call.DoAndReturn(f)
-	return c
-}
-
-// Proof mocks base method.
-func (m *MockPostClient) Proof(ctx context.Context, challenge []byte) (*types.Post, *types.PostInfo, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Proof", ctx, challenge)
-	ret0, _ := ret[0].(*types.Post)
-	ret1, _ := ret[1].(*types.PostInfo)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// Proof indicates an expected call of Proof.
-func (mr *MockPostClientMockRecorder) Proof(ctx, challenge any) *PostClientProofCall {
-	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Proof", reflect.TypeOf((*MockPostClient)(nil).Proof), ctx, challenge)
-	return &PostClientProofCall{Call: call}
-}
-
-// PostClientProofCall wrap *gomock.Call
-type PostClientProofCall struct {
-	*gomock.Call
-}
-
-// Return rewrite *gomock.Call.Return
-func (c *PostClientProofCall) Return(arg0 *types.Post, arg1 *types.PostInfo, arg2 error) *PostClientProofCall {
-	c.Call = c.Call.Return(arg0, arg1, arg2)
-	return c
-}
-
-// Do rewrite *gomock.Call.Do
-func (c *PostClientProofCall) Do(f func(context.Context, []byte) (*types.Post, *types.PostInfo, error)) *PostClientProofCall {
-	c.Call = c.Call.Do(f)
-	return c
-}
-
-// DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *PostClientProofCall) DoAndReturn(f func(context.Context, []byte) (*types.Post, *types.PostInfo, error)) *PostClientProofCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

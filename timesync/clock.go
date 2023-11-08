@@ -136,8 +136,7 @@ func (t *NodeClock) tick() {
 		)
 		d := t.lastTicked.Difference(layer)
 		tickDistance.Observe(float64(-d))
-	// don't warn right after fresh startup
-	case layer.Difference(t.lastTicked) > 1 && t.lastTicked > 0:
+	case layer.Difference(t.lastTicked) > 1:
 		t.log.With().Warning("clock skipped layers",
 			log.Stringer("layer", layer),
 			log.Stringer("last_ticked_layer", t.lastTicked),
@@ -165,8 +164,8 @@ func (t *NodeClock) CurrentLayer() types.LayerID {
 	return t.TimeToLayer(t.clock.Now())
 }
 
-// AwaitLayer returns a channel that will be signaled when layer id layerID was ticked by the clock,
-// or if this layer has passed while sleeping. it does so by closing the returned channel.
+// AwaitLayer returns a channel that will be signaled when layer id layerID was ticked by the clock, or if this layer has passed
+// while sleeping. it does so by closing the returned channel.
 func (t *NodeClock) AwaitLayer(layerID types.LayerID) <-chan struct{} {
 	t.mu.Lock()
 	defer t.mu.Unlock()

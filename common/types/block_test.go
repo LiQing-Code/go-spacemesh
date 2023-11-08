@@ -41,7 +41,9 @@ func Test_CertifyMessage(t *testing.T) {
 	require.NoError(t, codec.Decode(data, &decoded))
 	require.Equal(t, msg, decoded)
 
-	ok := signing.NewEdVerifier().Verify(signing.HARE, decoded.SmesherID, msg.Bytes(), decoded.Signature)
+	pke, err := signing.NewEdVerifier()
+	require.NoError(t, err)
+	ok := pke.Verify(signing.HARE, decoded.SmesherID, msg.Bytes(), decoded.Signature)
 	require.True(t, ok)
 }
 
@@ -58,10 +60,7 @@ func Test_BlockIDsToHashes(t *testing.T) {
 }
 
 func Test_NewExistingBlock(t *testing.T) {
-	expectedNewExistingBlock := types.NewExistingBlock(
-		types.BlockID{1, 1},
-		types.InnerBlock{LayerIndex: types.LayerID(1)},
-	)
+	expectedNewExistingBlock := types.NewExistingBlock(types.BlockID{1, 1}, types.InnerBlock{LayerIndex: types.LayerID(1)})
 
 	actualNewExistingBlock := types.NewExistingBlock(
 		types.BlockID{1, 1},

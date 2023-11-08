@@ -26,12 +26,7 @@ const (
 	dirPerm       = 0o700
 )
 
-func checkpointDB(
-	ctx context.Context,
-	db *sql.Database,
-	snapshot types.LayerID,
-	numAtxs int,
-) (*types.Checkpoint, error) {
+func checkpointDB(ctx context.Context, db *sql.Database, snapshot types.LayerID, numAtxs int) (*types.Checkpoint, error) {
 	request, err := json.Marshal(&pb.CheckpointStreamRequest{
 		SnapshotLayer: uint32(snapshot),
 		NumAtxs:       uint32(numAtxs),
@@ -117,14 +112,7 @@ func checkpointDB(
 	return checkpoint, nil
 }
 
-func Generate(
-	ctx context.Context,
-	fs afero.Fs,
-	db *sql.Database,
-	dataDir string,
-	snapshot types.LayerID,
-	numAtxs int,
-) error {
+func Generate(ctx context.Context, fs afero.Fs, db *sql.Database, dataDir string, snapshot types.LayerID, numAtxs int) error {
 	checkpoint, err := checkpointDB(ctx, db, snapshot, numAtxs)
 	if err != nil {
 		return err

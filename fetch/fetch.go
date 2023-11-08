@@ -35,8 +35,7 @@ const (
 )
 
 var (
-	// errExceedMaxRetries is returned when MaxRetriesForRequest attempts has been made to fetch
-	// data for a hash and failed.
+	// errExceedMaxRetries is returned when MaxRetriesForRequest attempts has been made to fetch data for a hash and failed.
 	errExceedMaxRetries = errors.New("fetch failed after max retries for request")
 
 	errValidatorsNotSet = errors.New("validators not set")
@@ -79,72 +78,24 @@ func (b *batchInfo) toMap() map[types.Hash32]RequestMessage {
 	return m
 }
 
-type ServerConfig struct {
-	Queue    int           `mapstructure:"queue"`
-	Requests int           `mapstructure:"requests"`
-	Interval time.Duration `mapstructure:"interval"`
-}
-
-func (s ServerConfig) toOpts() []server.Opt {
-	opts := []server.Opt{}
-	if s.Queue != 0 {
-		opts = append(opts, server.WithQueueSize(s.Queue))
-	}
-	if s.Requests != 0 && s.Interval != 0 {
-		opts = append(opts, server.WithRequestsPerInterval(s.Requests, s.Interval))
-	}
-	return opts
-}
-
 // Config is the configuration file of the Fetch component.
 type Config struct {
-	BatchTimeout         time.Duration
+	BatchTimeout         time.Duration // in milliseconds
 	BatchSize, QueueSize int
-	RequestTimeout       time.Duration
+	RequestTimeout       time.Duration // in seconds
 	MaxRetriesForRequest int
-	EnableServesMetrics  bool                    `mapstructure:"servers-metrics"`
-	ServersConfig        map[string]ServerConfig `mapstructure:"servers"`
-	PeersRateThreshold   float64                 `mapstructure:"peers-rate-threshold"`
-}
-
-func (c Config) getServerConfig(protocol string) ServerConfig {
-	cfg, exists := c.ServersConfig[protocol]
-	if exists {
-		return cfg
-	}
-	return ServerConfig{
-		Queue:    10000,
-		Requests: 100,
-		Interval: time.Second,
-	}
+	PeersRateThreshold   float64 `mapstructure:"peers-rate-threshold"`
 }
 
 // DefaultConfig is the default config for the fetch component.
 func DefaultConfig() Config {
 	return Config{
-		BatchTimeout:         50 * time.Millisecond,
+		BatchTimeout:         time.Millisecond * time.Duration(50),
 		QueueSize:            20,
 		BatchSize:            20,
-		RequestTimeout:       10 * time.Second,
+		RequestTimeout:       time.Second * time.Duration(10),
 		MaxRetriesForRequest: 100,
-		ServersConfig: map[string]ServerConfig{
-			// serves 1 MB of data
-			atxProtocol: {Queue: 10, Requests: 1, Interval: time.Second},
-			// serves 1 KB of data
-			lyrDataProtocol: {Queue: 1000, Requests: 100, Interval: time.Second},
-			// serves atxs, ballots, active sets
-			// atx - 1 KB
-			// ballots > 300 bytes
-			// often queried after receiving gossip message
-			hashProtocol: {Queue: 2000, Requests: 200, Interval: time.Second},
-			// serves at most 100 hashes - 3KB
-			meshHashProtocol: {Queue: 1000, Requests: 100, Interval: time.Second},
-			// serves all malicious ids (id - 32 byte) - 10KB
-			malProtocol: {Queue: 100, Requests: 10, Interval: time.Second},
-			// 64 bytes
-			OpnProtocol: {Queue: 10000, Requests: 1000, Interval: time.Second},
-		},
-		PeersRateThreshold: 0.02,
+		PeersRateThreshold:   0.02,
 	}
 }
 
@@ -240,11 +191,7 @@ func NewFetch(
 	for _, opt := range opts {
 		opt(f)
 	}
-	popts := []peers.Opt{}
-	if f.cfg.PeersRateThreshold != 0 {
-		popts = append(popts, peers.WithRateThreshold(f.cfg.PeersRateThreshold))
-	}
-	f.peers = peers.New(popts...)
+	f.peers = peers.New()
 	// NOTE(dshulyak) this is to avoid tests refactoring.
 	// there is one test that covers this part.
 	if host != nil {
@@ -269,32 +216,32 @@ func NewFetch(
 	}
 
 	f.batchTimeout = time.NewTicker(f.cfg.BatchTimeout)
-	if len(f.servers) == 0 {
-		h := newHandler(cdb, bs, msh, b, f.logger)
-		f.registerServer(host, atxProtocol, h.handleEpochInfoReq)
-		f.registerServer(host, lyrDataProtocol, h.handleLayerDataReq)
-		f.registerServer(host, hashProtocol, h.handleHashReq)
-		f.registerServer(host, meshHashProtocol, h.handleMeshHashReq)
-		f.registerServer(host, malProtocol, h.handleMaliciousIDsReq)
-		f.registerServer(host, OpnProtocol, h.handleLayerOpinionsReq2)
-	}
-	return f
-}
-
-func (f *Fetch) registerServer(
-	host *p2p.Host,
-	protocol string,
-	handler server.Handler,
-) {
-	opts := []server.Opt{
+	srvOpts := []server.Opt{
 		server.WithTimeout(f.cfg.RequestTimeout),
 		server.WithLog(f.logger),
 	}
-	if f.cfg.EnableServesMetrics {
-		opts = append(opts, server.WithMetrics())
+	if len(f.servers) == 0 {
+		h := newHandler(cdb, bs, msh, b, f.logger)
+		f.servers[atxProtocol] = server.New(host, atxProtocol, h.handleEpochInfoReq, srvOpts...)
+		f.servers[lyrDataProtocol] = server.New(
+			host,
+			lyrDataProtocol,
+			h.handleLayerDataReq,
+			srvOpts...)
+		f.servers[hashProtocol] = server.New(host, hashProtocol, h.handleHashReq, srvOpts...)
+		f.servers[meshHashProtocol] = server.New(
+			host,
+			meshHashProtocol,
+			h.handleMeshHashReq,
+			srvOpts...)
+		f.servers[malProtocol] = server.New(host, malProtocol, h.handleMaliciousIDsReq, srvOpts...)
+		f.servers[OpnProtocol] = server.New(
+			host,
+			OpnProtocol,
+			h.handleLayerOpinionsReq2,
+			srvOpts...)
 	}
-	opts = append(opts, f.cfg.getServerConfig(protocol).toOpts()...)
-	f.servers[protocol] = server.New(host, protocol, handler, opts...)
+	return f
 }
 
 type dataValidators struct {
@@ -344,12 +291,6 @@ func (f *Fetch) Start() error {
 			f.loop()
 			return nil
 		})
-		for _, srv := range f.servers {
-			srv := srv
-			f.eg.Go(func() error {
-				return srv.Run(f.shutdownCtx)
-			})
-		}
 	})
 	return nil
 }
@@ -685,8 +626,7 @@ func (f *Fetch) handleHashError(batchHash types.Hash32, err error) {
 }
 
 // getHash is the regular buffered call to get a specific hash, using provided hash, h as hint the receiving end will
-// know where to look for the hash, this function returns HashDataPromiseResult channel that will hold Data received
-// or error.
+// know where to look for the hash, this function returns HashDataPromiseResult channel that will hold Data received or error.
 func (f *Fetch) getHash(
 	ctx context.Context,
 	hash types.Hash32,

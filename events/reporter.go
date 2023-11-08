@@ -343,8 +343,7 @@ func SubscribeUserEvents(opts ...SubOpt) (*BufferedSubscription[UserEvent], *Rin
 }
 
 // The status of a layer
-// TODO: this list is woefully inadequate and does not map to reality.
-// See https://github.com/spacemeshos/api/issues/144.
+// TODO: this list is woefully inadequate and does not map to reality. See https://github.com/spacemeshos/api/issues/144.
 const (
 	LayerStatusTypeUnknown   = iota
 	LayerStatusTypeApproved  // approved by Hare

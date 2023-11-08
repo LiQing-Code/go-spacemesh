@@ -188,14 +188,7 @@ func (n *node) withOracle() *node {
 	beaconget.EXPECT().GetBeacon(gomock.Any()).DoAndReturn(func(epoch types.EpochID) (types.Beacon, error) {
 		return beacons.Get(n.db, epoch)
 	}).AnyTimes()
-	n.oracle = eligibility.New(
-		beaconget,
-		n.db,
-		signing.NewVRFVerifier(),
-		layersPerEpoch,
-		config.DefaultConfig(),
-		log.NewNop(),
-	)
+	n.oracle = eligibility.New(beaconget, n.db, signing.NewVRFVerifier(), n.vrfsigner, layersPerEpoch, config.DefaultConfig(), log.NewNop())
 	return n
 }
 
@@ -207,6 +200,8 @@ func (n *node) withPublisher() *node {
 
 func (n *node) withHare() *node {
 	logger := logtest.New(n.t).Named(fmt.Sprintf("hare=%d", n.i))
+	verifier, err := signing.NewEdVerifier()
+	require.NoError(n.t, err)
 
 	n.nclock = &testNodeClock{
 		genesis:       n.t.start,
@@ -215,7 +210,7 @@ func (n *node) withHare() *node {
 	tracer := newTestTracer(n.t)
 	n.tracer = tracer
 	n.patrol = layerpatrol.New()
-	n.hare = New(n.nclock, n.mpublisher, n.db, signing.NewEdVerifier(), n.oracle, n.msyncer, n.patrol,
+	n.hare = New(n.nclock, n.mpublisher, n.db, verifier, n.oracle, n.msyncer, n.patrol,
 		WithConfig(n.t.cfg),
 		WithLogger(logger.Zap()),
 		WithWallclock(n.clock),
@@ -423,15 +418,12 @@ func (cl *lockstepCluster) setup() {
 			require.NoError(cl.t, atxs.Add(n.db, other.atx))
 		}
 		n.oracle.UpdateActiveSet(cl.t.genesis.GetEpoch()+1, active)
-		n.mpublisher.EXPECT().
-			Publish(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx context.Context, _ string, msg []byte) error {
-				for _, other := range cl.nodes {
-					other.hare.Handler(ctx, "self", msg)
-				}
-				return nil
-			}).
-			AnyTimes()
+		n.mpublisher.EXPECT().Publish(gomock.Any(), gomock.Any(), gomock.Any()).Do(func(ctx context.Context, _ string, msg []byte) error {
+			for _, other := range cl.nodes {
+				other.hare.Handler(ctx, "self", msg)
+			}
+			return nil
+		}).AnyTimes()
 	}
 }
 
@@ -758,13 +750,7 @@ func gatx(id types.ATXID, epoch types.EpochID, smesher types.NodeID, base, heigh
 	return *verified
 }
 
-func gproposal(
-	id types.ProposalID,
-	atxid types.ATXID,
-	smesher types.NodeID,
-	layer types.LayerID,
-	beacon types.Beacon,
-) types.Proposal {
+func gproposal(id types.ProposalID, atxid types.ATXID, smesher types.NodeID, layer types.LayerID, beacon types.Beacon) types.Proposal {
 	proposal := types.Proposal{}
 	proposal.Layer = layer
 	proposal.EpochData = &types.EpochData{
@@ -778,13 +764,7 @@ func gproposal(
 	return proposal
 }
 
-func gref(
-	id types.ProposalID,
-	atxid types.ATXID,
-	smesher types.NodeID,
-	layer types.LayerID,
-	ref types.ProposalID,
-) types.Proposal {
+func gref(id types.ProposalID, atxid types.ATXID, smesher types.NodeID, layer types.LayerID, ref types.ProposalID) types.Proposal {
 	proposal := types.Proposal{}
 	proposal.Layer = layer
 	proposal.RefBallot = types.BallotID(ref)
